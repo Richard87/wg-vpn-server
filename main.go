@@ -5,73 +5,40 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	"io"
+	bolt "go.etcd.io/bbolt"
+	"io/fs"
+	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"time"
 )
+
+type Client struct {
+	Id        string     `json:"id"`
+	Name      string     `json:"name"`
+	Ip        net.IPAddr `json:"ip"`
+	PublicKey string     `json:"publicKey"`
+}
 
 //go:embed ui/build
 var embededFiles embed.FS
 
-func uiApp(w http.ResponseWriter, r *http.Request) {
-	filename := r.RequestURI
-	if filename == "/" || filename == "" {
-		filename = "/index.html"
-	}
+func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
+	// You can use the serve file helper to respond to 404 with
+	// your request file.
+	w.Header().Add("Content-type", "text/html")
 
-	filename = "ui/build" + filename
-	extension := filepath.Ext(filename)
-	contentType := "text/html"
-	switch extension {
-	case ".html":
-		contentType = "text/html"
-	case ".css":
-		contentType = "text/css"
-	case ".js":
-		contentType = "text/javascript"
-	case ".svg":
-		contentType = "image/svg+xml"
-	case ".map":
-		contentType = "text/plain"
-	}
-	w.Header().Add("Content-type", contentType)
+	f, _ := embededFiles.Open("ui/build/index.html")
 
-	log.Printf("%s (%s: %s)", filename, extension, contentType)
-	file, err := embededFiles.Open(filename)
-	if err != nil {
-		log.Printf("API: Warning: %v", err)
-		return
-	}
-	data := make([]byte, 512)
-	for {
-		data = data[:cap(data)]
-		n, err := file.Read(data)
-		if err != nil {
-			if err != io.EOF {
-				fmt.Println(err)
-			}
-			break
-		}
-		data = data[:n]
-
-		_, err = w.Write(data)
-		if err != nil {
-			log.Printf("API: Warning: %v", err)
-			break
-		}
-	}
-
-	err = file.Close()
-	if err != nil {
-		log.Printf("API: Warning: %v", err)
-	}
+	content, _ := ioutil.ReadAll(f)
+	_, _ = w.Write(content)
+	_ = f.Close()
 }
-
 func main() {
 	wgCreateMissingPtr := flag.Bool("wg-create-private-key-if-missing", false, "Set to generate private key if missing. WARNING, This will break existing clients!")
 	wgKeyPtr := flag.String("wg-private-key", "./var/wg.private", "Specify WireGuard key file location")
@@ -83,29 +50,19 @@ func main() {
 	httpsPortPtr := flag.Int("https-port", 8443, "API Webserver port")
 	httpsKeyPtr := flag.String("https-key", "./var/server.key", "Path to store webserver key (If missing new will be generated).")
 	httpsCrtPtr := flag.String("https-crt", "./var/server.crt", "Path to store webserver certificate (If missing new will be generated).")
+	httpsCorsPtr := flag.String("https-cors", "http://localhost:3000", "Which clients are allowed to connect (can be repeated)")
 	helpPtr := flag.Bool("help", false, "Show this help")
 	flag.Parse()
 
-	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, clientsPtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr)
-	router := mux.NewRouter()
-	srv := &http.Server{
-		Addr: fmt.Sprintf("0.0.0.0:%d", *httpsPortPtr),
-		// Good practice to set timeouts to avoid Slowloris attacks.
-		WriteTimeout: time.Second * 15,
-		ReadTimeout:  time.Second * 15,
-		IdleTimeout:  time.Second * 60,
-		Handler:      router, // Pass our instance of gorilla/mux in.
-	}
-	router.StrictSlash(true)
-	router.PathPrefix("/").HandlerFunc(uiApp)
+	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, clientsPtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr, httpsCorsPtr)
 
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Println(err)
-			os.Exit(1)
-		}
-		log.Println("API Server: started")
-	}()
+	db, err := bolt.Open(*clientsPtr, 0666, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	srv := runApiServer(httpsCorsPtr, httpsPortPtr, db)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -118,7 +75,40 @@ func main() {
 	os.Exit(0)
 }
 
-func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *string, clientsPtr *string, clientsSubnetPtr *string, httpsPortPtr *int, httpsCrtPtr *string, httpsKeyPtr *string, usersPtr *string) {
+func runApiServer(httpsCorsPtr *string, httpsPortPtr *int, db *bolt.DB) *http.Server {
+	router := mux.NewRouter()
+	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type"})
+	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr})
+	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	handler := handlers.CORS(originsOk, headersOk, methodsOk)(router)
+	srv := &http.Server{
+		Addr: fmt.Sprintf("0.0.0.0:%d", *httpsPortPtr),
+		// Good practice to set timeouts to avoid Slowloris attacks.
+		WriteTimeout: time.Second * 15,
+		ReadTimeout:  time.Second * 15,
+		IdleTimeout:  time.Second * 60,
+		Handler:      handler, // Pass our instance of gorilla/mux in.
+	}
+	router.StrictSlash(true)
+	// router.PathPrefix("/").HandlerFunc(uiApp)
+
+	subFs, _ := fs.Sub(embededFiles, "ui/build")
+	router.Path("/api/clients").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+	})
+	router.PathPrefix("/").Handler(http.FileServer(http.FS(subFs)))
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		log.Println("API Server: started")
+	}()
+	return srv
+}
+
+func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *string, clientsPtr *string, clientsSubnetPtr *string, httpsPortPtr *int, httpsCrtPtr *string, httpsKeyPtr *string, usersPtr *string, httpsCorsPtr *string) {
 	if *helpPtr {
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -142,6 +132,7 @@ func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *strin
 	log.Printf("Using client subnet:    %s", *clientsSubnetPtr)
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)
 	log.Printf("Using certificate:      %s (key: %s)", *httpsCrtPtr, *httpsKeyPtr)
+	log.Printf("Using CORS       :      %v", *httpsCorsPtr)
 	log.Printf("Using api-users:        %v", *usersPtr)
 	fmt.Print("\n")
 }
