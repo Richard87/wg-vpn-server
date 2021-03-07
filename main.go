@@ -5,43 +5,21 @@ import (
 	"embed"
 	"flag"
 	"fmt"
-	"github.com/gorilla/handlers"
-	"github.com/gorilla/mux"
 	bolt "go.etcd.io/bbolt"
-	"io/fs"
-	"io/ioutil"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"time"
 )
 
-type Client struct {
-	Id        string     `json:"id"`
-	Name      string     `json:"name"`
-	Ip        net.IPAddr `json:"ip"`
-	PublicKey string     `json:"publicKey"`
-}
-
 //go:embed ui/build
 var embededFiles embed.FS
 
-func NotFoundHandler(w http.ResponseWriter, r *http.Request) {
-	// You can use the serve file helper to respond to 404 with
-	// your request file.
-	w.Header().Add("Content-type", "text/html")
-
-	f, _ := embededFiles.Open("ui/build/index.html")
-
-	content, _ := ioutil.ReadAll(f)
-	_, _ = w.Write(content)
-	_ = f.Close()
-}
 func main() {
 	wgCreateMissingPtr := flag.Bool("wg-create-private-key-if-missing", false, "Set to generate private key if missing. WARNING, This will break existing clients!")
 	wgKeyPtr := flag.String("wg-private-key", "./var/wg.private", "Specify WireGuard key file location")
+	wgHostPtr := flag.String("wg-endpoint", "", "Specify WireGuard public IP and Port. For example 2.2.2.2:5180")
 
 	clientsSubnetPtr := flag.String("client-subnet", "10.0.0.0/24", "Specify default client subnet")
 	clientsPtr := flag.String("clients", "./var/clients.db", "Path to store clients.")
@@ -54,7 +32,7 @@ func main() {
 	helpPtr := flag.Bool("help", false, "Show this help")
 	flag.Parse()
 
-	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, clientsPtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr, httpsCorsPtr)
+	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, wgHostPtr, clientsPtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr, httpsCorsPtr)
 
 	db, err := bolt.Open(*clientsPtr, 0666, nil)
 	if err != nil {
@@ -62,7 +40,23 @@ func main() {
 	}
 	defer db.Close()
 
-	srv := runApiServer(httpsCorsPtr, httpsPortPtr, db)
+	router := NewRouter(httpsCorsPtr, db)
+	srv := &http.Server{
+		Addr: fmt.Sprintf("0.0.0.0:%d", *httpsPortPtr),
+		// Good practice to set timeouts to avoid Slowloris attacks.
+		WriteTimeout: time.Second * 15,
+		ReadTimeout:  time.Second * 15,
+		IdleTimeout:  time.Second * 60,
+		Handler:      router,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Println(err)
+			os.Exit(1)
+		}
+		log.Println("API Server: started")
+	}()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -75,40 +69,7 @@ func main() {
 	os.Exit(0)
 }
 
-func runApiServer(httpsCorsPtr *string, httpsPortPtr *int, db *bolt.DB) *http.Server {
-	router := mux.NewRouter()
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type"})
-	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
-	handler := handlers.CORS(originsOk, headersOk, methodsOk)(router)
-	srv := &http.Server{
-		Addr: fmt.Sprintf("0.0.0.0:%d", *httpsPortPtr),
-		// Good practice to set timeouts to avoid Slowloris attacks.
-		WriteTimeout: time.Second * 15,
-		ReadTimeout:  time.Second * 15,
-		IdleTimeout:  time.Second * 60,
-		Handler:      handler, // Pass our instance of gorilla/mux in.
-	}
-	router.StrictSlash(true)
-	// router.PathPrefix("/").HandlerFunc(uiApp)
-
-	subFs, _ := fs.Sub(embededFiles, "ui/build")
-	router.Path("/api/clients").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-	})
-	router.PathPrefix("/").Handler(http.FileServer(http.FS(subFs)))
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Println(err)
-			os.Exit(1)
-		}
-		log.Println("API Server: started")
-	}()
-	return srv
-}
-
-func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *string, clientsPtr *string, clientsSubnetPtr *string, httpsPortPtr *int, httpsCrtPtr *string, httpsKeyPtr *string, usersPtr *string, httpsCorsPtr *string) {
+func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *string, wgHostPtr *string, clientsPtr *string, clientsSubnetPtr *string, httpsPortPtr *int, httpsCrtPtr *string, httpsKeyPtr *string, usersPtr *string, httpsCorsPtr *string) {
 	if *helpPtr {
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -128,6 +89,7 @@ func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *strin
 
 	log.Printf("Starting WireGuard VPN Server!")
 	log.Printf("Using private key:      %s", *wgKeyPtr)
+	log.Printf("Wireguard endpoint:     %s", *wgHostPtr)
 	log.Printf("Using clients database: %s", *clientsPtr)
 	log.Printf("Using client subnet:    %s", *clientsSubnetPtr)
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)

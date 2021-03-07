@@ -95,7 +95,7 @@ fabric.properties
 # dependencies
 /.pnp
 .pnp.js
-
+/var
 # testing
 /coverage
 
