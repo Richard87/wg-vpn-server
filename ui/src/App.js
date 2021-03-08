@@ -2,7 +2,7 @@ import {useQuery} from "react-query"
 
 function App() {
 
-  const {data, isSuccess} = useQuery(["clients"], {queryFn: () => fetch("http://localhost:8005/api/clients").then(res => res.json())})
+  const {data, isSuccess} = useQuery(["clients"], {queryFn: () => fetch( `${process.env.REACT_APP_API_SERVER}/clients`).then(res => res.json())})
 
   return (
     <div className="App">

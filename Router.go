@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"io/fs"
@@ -18,12 +19,12 @@ type Route struct {
 
 type Routes []Route
 
-func NewRouter(httpsCorsPtr *string) http.Handler {
+func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 
 	router := mux.NewRouter().StrictSlash(true)
 
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type"})
-	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr})
+	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type", "Access-Control-Allow-Origin"})
+	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr, fmt.Sprintf("https://localhost:%d", *httpsPortPtr)})
 	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
 
 	for _, route := range routes {
