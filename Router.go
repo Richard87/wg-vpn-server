@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	bolt "go.etcd.io/bbolt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -19,7 +18,7 @@ type Route struct {
 
 type Routes []Route
 
-func NewRouter(httpsCorsPtr *string, db *bolt.DB) http.Handler {
+func NewRouter(httpsCorsPtr *string) http.Handler {
 
 	router := mux.NewRouter().StrictSlash(true)
 
@@ -59,10 +58,16 @@ var routes = Routes{
 		apiClientCreate,
 	},
 	Route{
-		"TodoShow",
+		"Client",
 		"GET",
 		"/api/clients/{clientId}",
 		apiClientShow,
+	},
+	Route{
+		"Client Delete",
+		"DELETE",
+		"/api/clients/{clientId}",
+		apiClientRemove,
 	},
 }
 

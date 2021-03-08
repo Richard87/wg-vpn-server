@@ -28,7 +28,7 @@ func apiClientCreate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := ClientCreate(newClient)
+	client := *ClientCreate(&newClient)
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(client); err != nil {
@@ -37,17 +37,27 @@ func apiClientCreate(w http.ResponseWriter, r *http.Request) {
 }
 func apiClientsIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-type", "application/json")
-	json.NewEncoder(w).Encode(clients)
+
+	clients := ClientList()
+
+	_ = json.NewEncoder(w).Encode(clients)
 }
 func apiClientShow(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-type", "application/json")
 	vars := mux.Vars(r)
 	clientId, _ := strconv.Atoi(vars["clientId"])
 
 	client := ClientFind(clientId)
 	if client != nil {
+		w.Header().Add("Content-type", "application/json")
 		json.NewEncoder(w).Encode(*client)
 	} else {
 		w.WriteHeader(404)
 	}
+}
+func apiClientRemove(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	clientId, _ := strconv.Atoi(vars["clientId"])
+
+	ClientRemove(clientId)
+	w.WriteHeader(204)
 }

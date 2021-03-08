@@ -15,6 +15,7 @@ import (
 
 //go:embed ui/build
 var embededFiles embed.FS
+var Db *bolt.DB
 
 func main() {
 	wgCreateMissingPtr := flag.Bool("wg-create-private-key-if-missing", false, "Set to generate private key if missing. WARNING, This will break existing clients!")
@@ -22,7 +23,7 @@ func main() {
 	wgHostPtr := flag.String("wg-endpoint", "", "Specify WireGuard public IP and Port. For example 2.2.2.2:5180")
 
 	clientsSubnetPtr := flag.String("client-subnet", "10.0.0.0/24", "Specify default client subnet")
-	clientsPtr := flag.String("clients", "./var/clients.db", "Path to store clients.")
+	databasePtr := flag.String("database", "./var/wg.db", "Path to store clients.")
 
 	usersPtr := flag.String("user", "", "API User, can be repeated to create more users. For example: \n-user 'admin:$argon2i$v=19$m=16,t=2,p=1$S1p3Z0FTQTViZkh0MURTVA$jxPFAzQ3kSrbEPSibCQIrg'\n(If no users specified, a default admin password will be generated and printed to console")
 	httpsPortPtr := flag.Int("https-port", 8443, "API Webserver port")
@@ -32,15 +33,12 @@ func main() {
 	helpPtr := flag.Bool("help", false, "Show this help")
 	flag.Parse()
 
-	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, wgHostPtr, clientsPtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr, httpsCorsPtr)
+	printConfiguration(helpPtr, wgCreateMissingPtr, wgKeyPtr, wgHostPtr, databasePtr, clientsSubnetPtr, httpsPortPtr, httpsCrtPtr, httpsKeyPtr, usersPtr, httpsCorsPtr)
 
-	db, err := bolt.Open(*clientsPtr, 0666, nil)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
+	Db = initDatabase(databasePtr)
+	defer Db.Close()
 
-	router := NewRouter(httpsCorsPtr, db)
+	router := NewRouter(httpsCorsPtr)
 	srv := &http.Server{
 		Addr: fmt.Sprintf("0.0.0.0:%d", *httpsPortPtr),
 		// Good practice to set timeouts to avoid Slowloris attacks.
@@ -67,6 +65,25 @@ func main() {
 	_ = srv.Shutdown(ctx)
 	log.Println("WireGuard: shutting down")
 	os.Exit(0)
+}
+
+func initDatabase(clientsPtr *string) *bolt.DB {
+	thisDb, err := bolt.Open(*clientsPtr, 0666, nil)
+	if err != nil {
+		panic(err)
+	}
+	err = thisDb.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists([]byte("clients"))
+		if err != nil {
+			return fmt.Errorf("create bucket: %s", err)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return thisDb
 }
 
 func printConfiguration(helpPtr *bool, wgCreateMissingPtr *bool, wgKeyPtr *string, wgHostPtr *string, clientsPtr *string, clientsSubnetPtr *string, httpsPortPtr *int, httpsCrtPtr *string, httpsKeyPtr *string, usersPtr *string, httpsCorsPtr *string) {
