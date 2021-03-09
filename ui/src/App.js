@@ -1,40 +1,45 @@
-import {useState} from "react"
 import {useQuery} from "react-query"
+import styled from "styled-components"
+import {MDBContainer, MDBNavbar, MDBNavbarBrand,} from "mdbreact";
+import ClientCard from "./ClientCard";
+import CreateClient from "./CreateClient";
+
+const Grid = styled.div`
+  margin-top: 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  grid-gap: 2rem;
+`
 
 function App() {
-    const [name, setName] = useState("")
-    const [ip, setIp] = useState("")
-    const [publicKey, setPublicKey] = useState("")
     const {data, isSuccess, refetch} = useQuery(["clients"], {
         queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/clients`).then(res => res.json())
     })
 
-
-    const onSubmit = (events) => {
-        events.preventDefault()
-
+    const onSubmit = (newClient) => {
         fetch(`${process.env.REACT_APP_API_SERVER}/clients`, {
             method: "POST",
-            body: JSON.stringify({name, ip, publicKey})
+            body: JSON.stringify(newClient)
         }).then(() => refetch())
-
-        return false
     }
 
     return (
         <div className="App">
-            <ul>
-                {isSuccess && data.map(client => <li key={client.id}>{client.name}</li>)}
-            </ul>
-            <form onSubmit={onSubmit}>
-                <input value={name} onChange={e => setName(e.target.value)} name="name"/>
-
-                <input value={ip} onChange={e => setIp(e.target.value)} name="ip"/>
-                <input value={publicKey} onChange={e => setPublicKey(e.target.value)} name="publicKey"/>
-                <button type={"submit"}>Lagre klient</button>
-            </form>
+            <MDBNavbar color="indigo" dark expand="md">
+                <MDBNavbarBrand>
+                    <strong className="white-text">WG VPN Server</strong>
+                </MDBNavbarBrand>
+            </MDBNavbar>
+            <MDBContainer>
+                <Grid>
+                    {isSuccess && data.map(client => <ClientCard key={client.id} client={client}/>)}
+                </Grid>
+            </MDBContainer>
+            <CreateClient onSubmit={onSubmit}/>
         </div>
     );
 }
 
 export default App;
+
+
