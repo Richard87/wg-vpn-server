@@ -1,7 +1,9 @@
 import {useState} from "react";
 import {MDBBtn, MDBCol, MDBIcon, MDBInput, MDBModal, MDBModalBody, MDBModalFooter, MDBModalHeader, MDBRow} from "mdbreact";
-import qrImage from "./qrgen.png";
 import styled from "styled-components";
+import {useQuery} from "react-query";
+import QRCode from 'qrcode.react';
+
 
 const FloatingButton = styled(MDBBtn)`
   position: fixed !important;
@@ -17,16 +19,47 @@ const FloatingButton = styled(MDBBtn)`
   }
 `
 
+const wgConfig = (name, address, privateKey,DNS, endpoint, publicKey) => {
+    return `
+[Interface]
+# Name = ${name}
+Address = ${address}
+PrivateKey = ${privateKey}
+DNS = ${DNS}
+
+[Peer]
+# Name = ${endpoint}
+Endpoint = ${endpoint}
+PublicKey = ${publicKey}
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25`
+}
+
 export default function CreateClient ({onSubmit}) {
     const [name, setName] = useState("")
     const [ip, setIp] = useState("")
     const [publicKey, setPublicKey] = useState("")
     const [showNewClient, setShowNewClient] = useState(false)
+    const [showConfig, setShowConfig] = useState(false)
+    const [privateKey, setPrivateKey] = useState(null)
+
+    const {data: config} = useQuery("config", {
+        queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/config`).then(res => res.json()),
+        onSuccess: data => setIp(data.nextAvailableIps[0])
+    })
 
     const onLocalSubmit = () => {
         setShowNewClient(false)
         onSubmit({name, ip, publicKey})
     }
+
+    const onGenerate = () => {
+        const {publicKey, privateKey} = window.wireguard.generateKeypair()
+        setPrivateKey(privateKey)
+        setPublicKey(publicKey)
+    }
+
+    const currentConfig = wgConfig(name,ip,privateKey,config.recommendedDNS,config.endpoint,config.publicKey)
 
     return <>
         <FloatingButton onClick={() => setShowNewClient(true)} gradient="purple">
@@ -52,11 +85,14 @@ export default function CreateClient ({onSubmit}) {
                                   value={publicKey}
                                   onChange={e => setPublicKey(e.target.value)}
                                   name="publicKey"/>
-                        <MDBBtn color="primary">Generate private key</MDBBtn>
+                        <MDBBtn onClick={onGenerate} color="primary">Generate private key</MDBBtn>
                     </MDBCol>
                     <MDBCol>
-                        <img src={qrImage} className="img-fluid" alt="Generated QR code"/>
-                        <MDBBtn color="secondary">Show config</MDBBtn>
+                        {showConfig
+                            ? <pre>{currentConfig}</pre>
+                            : <QRCode style={{width: "100%", height: "auto"}} renderAs={"svg"} value={currentConfig} />
+                        }
+                        <MDBBtn color="secondary" onClick={() => setShowConfig(show => !show)}>{showConfig ? 'Show QR Code' : 'Show config'}</MDBBtn>
                     </MDBCol>
                 </MDBRow>
             </MDBModalBody>

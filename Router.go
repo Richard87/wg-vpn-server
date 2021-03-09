@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -45,7 +46,31 @@ func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 	return handlers.CORS(originsOk, headersOk, methodsOk)(router)
 }
 
+type Config struct {
+	Endpoint         string   `json:"endpoint"`
+	NextAvailableIps []string `json:"nextAvailableIps"`
+	PublicKey        string   `json:"publicKey"`
+	RecommendedDNS   string   `json:"recommendedDNS"`
+}
+
+func apiGetConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Content-type", "application/json")
+
+	_ = json.NewEncoder(w).Encode(Config{
+		Endpoint:         "wg.r6.no:51820",
+		NextAvailableIps: []string{"192.168.43.102/32"},
+		PublicKey:        "PoPzKDTHmSqeHlI/6vu1oobLyFnBCuBjRhRsD/l86AY=",
+		RecommendedDNS:   "1.1.1.1",
+	})
+}
+
 var routes = Routes{
+	Route{
+		"Config",
+		"GET",
+		"/api/config",
+		apiGetConfig,
+	},
 	Route{
 		"Client List",
 		"GET",
