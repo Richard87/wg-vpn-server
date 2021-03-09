@@ -8,10 +8,10 @@ import (
 )
 
 type Client struct {
-	Id        int    `json:"id"`
-	Name      string `json:"name"`
-	Ip        string `json:"ip"`
-	PublicKey string `json:"publicKey"`
+	Id         int      `json:"id"`
+	Name       string   `json:"name"`
+	AllowedIps []string `json:"allowedIps"`
+	PublicKey  string   `json:"publicKey"`
 }
 type allClients []Client
 

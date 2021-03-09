@@ -9,6 +9,15 @@ import (
 	"strconv"
 )
 
+type ClientInfo struct {
+	Client
+	LatestHandshake string `json:"latestHandshake"`
+	Endpoint        string `json:"endpoint"`
+	SentBytes       int64  `json:"sentBytes"`
+	ReceivedBytes   int64  `json:"receivedBytes"`
+}
+type allClientInfo = []ClientInfo
+
 func apiClientCreate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-type", "application/json")
 	var newClient Client
@@ -37,10 +46,19 @@ func apiClientCreate(w http.ResponseWriter, r *http.Request) {
 }
 func apiClientsIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-type", "application/json")
-
 	clients := ClientList()
+	var allClients = make(allClientInfo, len(*clients))
+	for i, client := range *clients {
+		allClients[i] = ClientInfo{
+			Client:          client,
+			LatestHandshake: "2021-01-09T21:15:37.189Z",
+			Endpoint:        "77.18.62.145:15427",
+			SentBytes:       32165498,
+			ReceivedBytes:   132546,
+		}
+	}
 
-	_ = json.NewEncoder(w).Encode(clients)
+	_ = json.NewEncoder(w).Encode(allClients)
 }
 func apiClientShow(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -49,7 +67,13 @@ func apiClientShow(w http.ResponseWriter, r *http.Request) {
 	client := ClientFind(clientId)
 	if client != nil {
 		w.Header().Add("Content-type", "application/json")
-		json.NewEncoder(w).Encode(*client)
+		_ = json.NewEncoder(w).Encode(ClientInfo{
+			Client:          *client,
+			LatestHandshake: "2021-01-09T21:15:37.189Z",
+			Endpoint:        "77.18.62.145:15427",
+			SentBytes:       32165498,
+			ReceivedBytes:   132546,
+		})
 	} else {
 		w.WriteHeader(404)
 	}
