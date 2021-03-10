@@ -50,7 +50,7 @@ export default function CreateClient ({onSubmit}) {
 
     const onLocalSubmit = () => {
         setShowNewClient(false)
-        onSubmit({name, ip, publicKey}).then(refetch)
+        onSubmit({name, allowedIps: [ip], publicKey}).then(refetch)
     }
 
     const onGenerate = () => {

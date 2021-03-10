@@ -98,7 +98,7 @@ fabric.properties
 /var
 # testing
 /coverage
-
+/ui/.env
 /ui/build
 /ui/# misc
 /ui/.DS_Store
