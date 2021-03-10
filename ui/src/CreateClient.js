@@ -89,7 +89,7 @@ export default function CreateClient ({onSubmit}) {
                     </MDBCol>
                     <MDBCol>
                         {showConfig
-                            ? <pre>{currentConfig}</pre>
+                            ? <pre><code>{currentConfig}</code></pre>
                             : <QRCode style={{width: "100%", height: "auto"}} renderAs={"svg"} value={currentConfig} />
                         }
                         <MDBBtn color="secondary" onClick={() => setShowConfig(show => !show)}>{showConfig ? 'Show QR Code' : 'Show config'}</MDBBtn>
