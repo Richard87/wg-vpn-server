@@ -17,7 +17,7 @@ function App() {
     })
 
     const onSubmit = (newClient) => {
-        fetch(`${process.env.REACT_APP_API_SERVER}/clients`, {
+        return fetch(`${process.env.REACT_APP_API_SERVER}/clients`, {
             method: "POST",
             body: JSON.stringify(newClient)
         }).then(() => refetch())

@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	bolt "go.etcd.io/bbolt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"time"
 )
@@ -52,15 +54,73 @@ type Config struct {
 	PublicKey        string   `json:"publicKey"`
 	RecommendedDNS   string   `json:"recommendedDNS"`
 }
+func inc(ip net.IP) {
+	for j := len(ip)-1; j>=0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
+}
+
+func remove(s []string, r string) []string {
+	for i, v := range s {
+		if v == r {
+			return append(s[:i], s[i+1:]...)
+		}
+	}
+	return s
+}
 
 func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-type", "application/json")
 
+	ip, ipnet, err := net.ParseCIDR(*clientsSubnetPtr)
+	if err != nil {
+		return
+	}
+
+	var ips []string
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
+		ips = append(ips, ip.String())
+	}
+
+	if len(ips) <= 2 || ips == nil {
+		log.Fatal("No IP's in range!")
+	}
+	ips = ips[1 : len(ips)-1]
+
+	_ = Db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("clients"))
+
+		c := b.Cursor()
+
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var client = &Client{}
+			err := json.Unmarshal(v, client)
+			if err != nil {
+				log.Print(err)
+				continue
+			}
+
+			for _, ip := range client.AllowedIps {
+				remove(ips, ip)
+			}
+		}
+
+		return nil
+	})
+
+	var nextAvailableIps []string
+	if len(ips) > 0 {
+		nextAvailableIps = append(nextAvailableIps, ips[0])
+	}
+
 	_ = json.NewEncoder(w).Encode(Config{
-		Endpoint:         "wg.r6.no:51820",
-		NextAvailableIps: []string{"192.168.43.102/32"},
-		PublicKey:        "PoPzKDTHmSqeHlI/6vu1oobLyFnBCuBjRhRsD/l86AY=",
-		RecommendedDNS:   "1.1.1.1",
+		Endpoint:         *wgEndpointPtr,
+		NextAvailableIps: nextAvailableIps,
+		PublicKey:        wgPublicKey,
+		RecommendedDNS:   *wgRecommendedDns,
 	})
 }
 

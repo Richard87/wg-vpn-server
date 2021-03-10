@@ -12,7 +12,10 @@
         - [X] Create
         - [X] Modify name
         - [X] Delete
-    - [X] Config
+    - [ ] Config
+        - [X] Get endpoint
+        - [ ] Get next available IP
+        - [ ] Use real endpoint
 - [ ] UI
     - [X] Create clients
     - [X] List clients
