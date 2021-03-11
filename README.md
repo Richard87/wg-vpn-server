@@ -12,22 +12,23 @@
         - [X] Create
         - [X] Modify name
         - [X] Delete
-    - [ ] Config
+    - [X] Config
         - [X] Get endpoint
-        - [ ] Get next available IP
-        - [ ] Use real endpoint
+        - [X] Get next available IP
+        - [X] Use real endpoint
 - [ ] UI
     - [X] Create clients
     - [X] List clients
     - [X] Generate QR Code
     - [X] Generate Config
-    - [ ] Delete Client
+    - [X] Delete Client
+    - [ ] Confirm deletion
     - [ ] Authentication
 - [ ] WireGuard
-    - [ ] Configure with clients from client.db (watch for changes)
-    - [ ] Generate Private key if missing
-    - [ ] Configure with Private key
-    - [ ] Find next available IP
+    - [ ] Configure with clients from client.db (watch for changes) / generate wg0.conf
+    - [X] Generate Private key if missing
+    - [X] Configure with Private key
+    - [X] Find next available IP
     - [ ] Validate IP on create
     - [ ] Use a userspace Wireguard implementation: https://github.com/cloudflare/boringtun
  

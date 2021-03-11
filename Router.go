@@ -28,7 +28,7 @@ func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 
 	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type", "Access-Control-Allow-Origin"})
 	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr, fmt.Sprintf("https://localhost:%d", *httpsPortPtr)})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
 
 	for _, route := range routes {
 		var handler http.Handler
@@ -54,8 +54,9 @@ type Config struct {
 	PublicKey        string   `json:"publicKey"`
 	RecommendedDNS   string   `json:"recommendedDNS"`
 }
+
 func inc(ip net.IP) {
-	for j := len(ip)-1; j>=0; j-- {
+	for j := len(ip) - 1; j >= 0; j-- {
 		ip[j]++
 		if ip[j] > 0 {
 			break

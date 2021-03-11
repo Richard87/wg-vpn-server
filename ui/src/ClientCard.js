@@ -1,7 +1,7 @@
 import {MDBBtn, MDBCard, MDBCardBody, MDBCardText, MDBCardTitle} from "mdbreact";
 import {formatDistance} from "date-fns"
 
-export default function ClientCard({client}) {
+export default function ClientCard({client, onDelete}) {
 
     const latestHandshake = client?.latestHandshake ? new Date(client.latestHandshake) : null
     const latestHandshakeDistance = latestHandshake ? formatDistance(latestHandshake, new Date(), { addSuffix: true }) : ""
@@ -17,7 +17,7 @@ export default function ClientCard({client}) {
                 <strong>latest handshake: </strong>{latestHandshakeDistance}<br/>
                 <strong>transfer: </strong>{bytesToSize(client?.receivedBytes)} received, {bytesToSize(client?.sentBytes)} sent<br/>
             </MDBCardText>
-            <MDBBtn href="#">MDBBtn</MDBBtn>
+            <MDBBtn onClick={onDelete}>Remove client</MDBBtn>
         </MDBCardBody>
     </MDBCard>
 }

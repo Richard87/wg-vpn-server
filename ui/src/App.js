@@ -23,6 +23,10 @@ function App() {
         }).then(() => refetch())
     }
 
+    const onDelete = client => {
+        return fetch(`${process.env.REACT_APP_API_SERVER}/clients/${client.id}`, {method: "DELETE"}).then(() => refetch())
+    }
+
     return (
         <div className="App">
             <MDBNavbar color="indigo" dark expand="md">
@@ -32,7 +36,7 @@ function App() {
             </MDBNavbar>
             <MDBContainer>
                 <Grid>
-                    {isSuccess && data.map(client => <ClientCard key={client.id} client={client}/>)}
+                    {isSuccess && data.map(client => <ClientCard onDelete={() => onDelete(client)} key={client.id} client={client}/>)}
                 </Grid>
             </MDBContainer>
             <CreateClient onSubmit={onSubmit}/>
