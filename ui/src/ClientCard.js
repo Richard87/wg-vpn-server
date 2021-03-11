@@ -13,7 +13,7 @@ export default function ClientCard({client}) {
                 <strong>peer: </strong><span
                 style={{wordBreak: "break-all"}}>{client?.publicKey}</span><br/>
                 <strong>endpoint: </strong>{client?.endpoint}<br/>
-                <strong>allowed ips: </strong>{(client?.ip ?? []).join(", ")}<br/>
+                <strong>allowed ips: </strong>{(client?.allowedIps ?? []).join(", ")}<br/>
                 <strong>latest handshake: </strong>{latestHandshakeDistance}<br/>
                 <strong>transfer: </strong>{bytesToSize(client?.receivedBytes)} received, {bytesToSize(client?.sentBytes)} sent<br/>
             </MDBCardText>
