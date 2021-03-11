@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -49,10 +50,10 @@ func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 }
 
 type Config struct {
-	Endpoint         string   `json:"endpoint"`
-	NextAvailableIps []string `json:"nextAvailableIps"`
-	PublicKey        string   `json:"publicKey"`
-	RecommendedDNS   string   `json:"recommendedDNS"`
+	Endpoint         string `json:"endpoint"`
+	NextAvailableIp4 string `json:"nextAvailableIp4"`
+	PublicKey        string `json:"publicKey"`
+	RecommendedDNS   string `json:"recommendedDNS"`
 }
 
 func inc(ip net.IP) {
@@ -83,7 +84,7 @@ func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 
 	var ips []string
 	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
-		ips = append(ips, ip.String())
+		ips = append(ips, ip.String()+"/32")
 	}
 
 	if len(ips) <= 2 || ips == nil {
@@ -112,15 +113,10 @@ func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	var nextAvailableIps []string
-	if len(ips) > 0 {
-		nextAvailableIps = append(nextAvailableIps, ips[0])
-	}
-
 	_ = json.NewEncoder(w).Encode(Config{
-		Endpoint:         *wgEndpointPtr,
-		NextAvailableIps: nextAvailableIps,
-		PublicKey:        wgPublicKey,
+		Endpoint:         *wgEndpointPtr + ":" + strconv.Itoa(*wgListenPortPtr),
+		NextAvailableIp4: ips[0],
+		PublicKey:        wgPublicKey.String(),
 		RecommendedDNS:   *wgRecommendedDns,
 	})
 }

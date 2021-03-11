@@ -45,7 +45,7 @@ export default function CreateClient ({onSubmit}) {
 
     const {data: config, refetch} = useQuery("config", {
         queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/config`).then(res => res.json()),
-        onSuccess: data => setIp(data.nextAvailableIps[0])
+        onSuccess: data => setIp(data.nextAvailableIp4)
     })
 
     const onLocalSubmit = () => {

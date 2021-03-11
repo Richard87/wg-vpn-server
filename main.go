@@ -13,7 +13,11 @@ import (
 	"encoding/pem"
 	"flag"
 	"fmt"
+	_ "github.com/mdlayher/genetlink"
+	_ "github.com/mdlayher/netlink"
+	_ "github.com/mdlayher/netlink/nlenc"
 	bolt "go.etcd.io/bbolt"
+	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log"
 	"math/big"
@@ -23,17 +27,19 @@ import (
 	"time"
 )
 
-
-
 var (
 	//go:embed ui/build
- 	embededFiles       embed.FS
- 	Db                 *bolt.DB
+	embededFiles       embed.FS
+	Db                 *bolt.DB
+	wgClient           *wgctrl.Client
 	wgCreateMissingPtr = flag.Bool("wg-create-private-key-if-missing", false, "Set to generate private key if missing. WARNING, This will break existing clients!")
 	wgKeyPtr           = flag.String("wg-private-key", "./var/wg.private", "Specify WireGuard key file location")
-	wgEndpointPtr      = flag.String("wg-endpoint", "", "Specify WireGuard public IP and Port. For example 2.2.2.2:51820")
+	wgEndpointPtr      = flag.String("wg-endpoint", "", "Specify WireGuard public IP and Port. For example 2.2.2.2")
+	wgListenPortPtr    = flag.Int("wg-listen-port", 51820, "Specify WireGuard Listen port")
 	wgRecommendedDns   = flag.String("wg-dns", "1.1.1.1", "Specify recommended DNS for clients.")
-	wgPublicKey        string
+	wgDeviceName       = flag.String("wg-device", "wg0", "WireGuard device name")
+	wgPublicKey        wgtypes.Key
+	wgPrivateKey       wgtypes.Key
 
 	clientsSubnetPtr = flag.String("client-subnet", "10.0.0.0/24", "Specify default client subnet")
 	databasePtr      = flag.String("database", "./var/wg.db", "Path to store clients.")
@@ -55,16 +61,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	client, err := wgctrl.New()
+	if err != nil {
+		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
+	}
+	wgClient = client
+
 	initVarFolder()
 	initPrivateKey()
 	initPublicKey()
 	printConfiguration()
 
 	Db = initDatabase(databasePtr)
+	//goland:noinspection ALL
 	defer Db.Close()
 
-	router := NewRouter(httpsCorsPtr, httpsPortPtr)
+	syncDatabaseWireGuard()
 
+	router := NewRouter(httpsCorsPtr, httpsPortPtr)
 	srv := initWebserver(httpsPortPtr, router, httpsCrtPtr, httpsKeyPtr)
 
 	c := make(chan os.Signal, 1)
@@ -87,7 +101,8 @@ func initPublicKey() {
 	if err != nil {
 		log.Fatalf("Could not parse private key: %v", err)
 	}
-	wgPublicKey = key.PublicKey().String()
+	wgPublicKey = key.PublicKey()
+	wgPrivateKey = key
 }
 
 func initVarFolder() {
@@ -239,6 +254,80 @@ func initDatabase(clientsPtr *string) *bolt.DB {
 	return thisDb
 }
 
+func removeIndexFromList(list allClients, i int) allClients {
+	list[i] = list[len(list)-1]
+	// We do not need to put s[i] at the end, as it will be discarded anyway
+	return list[:len(list)-1]
+}
+
+func syncDatabaseWireGuard() {
+	allClients := *ClientList()
+
+	peers := []wgtypes.PeerConfig{}
+	device, err := wgClient.Device(*wgDeviceName)
+
+	if err != nil {
+		log.Fatalf("WireGuard: Could not configure device %s: %s", *wgDeviceName, err)
+	}
+
+	// Remove clients from wireguard
+	for _, peer := range device.Peers {
+		peer := wgtypes.PeerConfig{
+			PublicKey:         peer.PublicKey,
+			Remove:            false,
+			UpdateOnly:        false,
+			ReplaceAllowedIPs: false,
+			AllowedIPs:        peer.AllowedIPs,
+		}
+
+		for i, client := range allClients {
+			if client.PublicKey == peer.PublicKey.String() {
+				peer.AllowedIPs = getAllowedIpNets(&client)
+				peer.UpdateOnly = true
+				peer.ReplaceAllowedIPs = true
+
+				allClients = removeIndexFromList(allClients, i)
+				break
+			}
+		}
+
+		peers = append(peers, peer)
+	}
+
+	// Add missing clients to WireGuard
+	for _, client := range allClients {
+
+		key, err := wgtypes.ParseKey(client.PublicKey)
+		if err != nil {
+			log.Printf("Could not add missing WireGuard Client %s: %s", client.Name, err)
+			continue
+		}
+
+		newPeer := wgtypes.PeerConfig{
+			PublicKey:         key,
+			Remove:            false,
+			UpdateOnly:        false,
+			ReplaceAllowedIPs: false,
+			AllowedIPs:        getAllowedIpNets(&client),
+		}
+
+		peers = append(peers, newPeer)
+	}
+
+	cfg := wgtypes.Config{
+		PrivateKey:   &wgPrivateKey,
+		ListenPort:   wgListenPortPtr,
+		FirewallMark: &device.FirewallMark,
+		ReplacePeers: false,
+		Peers:        peers,
+	}
+
+	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
+	if err != nil {
+		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
+	}
+}
+
 func printConfiguration() {
 	if *helpPtr {
 		flag.PrintDefaults()
@@ -261,7 +350,7 @@ func printConfiguration() {
 	log.Printf("Using wg private key:   %s", *wgKeyPtr)
 	log.Printf("Using wg public key:    %s", wgPublicKey)
 	log.Printf("Using wg DNS:           %s", *wgRecommendedDns)
-	log.Printf("Wireguard endpoint:     %s", *wgEndpointPtr)
+	log.Printf("using wg endpoint:     %s", *wgEndpointPtr)
 	log.Printf("Using clients database: %s", *databasePtr)
 	log.Printf("Using client subnet:    %s", *clientsSubnetPtr)
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)

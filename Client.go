@@ -62,17 +62,22 @@ func ClientFind(id int) *Client {
 }
 
 func ClientRemove(id int) {
+	client := ClientFind(id)
 
-	_ = Db.Update(func(tx *bolt.Tx) error {
+	err := Db.Update(func(tx *bolt.Tx) error {
 
 		b := tx.Bucket([]byte("clients"))
 		err := b.Delete(itob(id))
 		if err != nil {
 			log.Print(err)
+			return err
 		}
 
 		return nil
 	})
+	if err == nil {
+		removeClient(client)
+	}
 }
 
 func ClientCreate(newClient *Client) *Client {
@@ -94,6 +99,7 @@ func ClientCreate(newClient *Client) *Client {
 		log.Fatal(err)
 	}
 
+	addClient(newClient)
 	return newClient
 }
 

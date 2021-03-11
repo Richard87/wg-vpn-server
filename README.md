@@ -25,10 +25,11 @@
     - [ ] Confirm deletion
     - [ ] Authentication
 - [ ] WireGuard
-    - [ ] Configure with clients from client.db (watch for changes) / generate wg0.conf
+    - [X] Configure with clients from client.db (watch for changes) / generate wg0.conf
     - [X] Generate Private key if missing
     - [X] Configure with Private key
     - [X] Find next available IP
     - [ ] Validate IP on create
-    - [ ] Use a userspace Wireguard implementation: https://github.com/cloudflare/boringtun
+    - [ ] Create wgX device if missing (depending on platform)
+    - [ ] Use a userspace WireGuard implementation: https://github.com/cloudflare/boringtun
  
