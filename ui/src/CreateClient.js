@@ -51,6 +51,16 @@ export default function CreateClient ({onSubmit}) {
     const onLocalSubmit = () => {
         setShowNewClient(false)
         onSubmit({name, allowedIps: [ip], publicKey}).then(refetch)
+        setPublicKey("")
+        setIp("")
+        setName("")
+    }
+
+    const onClose = () => {
+        setPublicKey("")
+        setIp("")
+        setName("")
+        setShowNewClient(false)
     }
 
     const onGenerate = () => {
@@ -97,7 +107,7 @@ export default function CreateClient ({onSubmit}) {
                 </MDBRow>
             </MDBModalBody>
             <MDBModalFooter>
-                <MDBBtn color="secondary" onClick={() => setShowNewClient(false)}>Close</MDBBtn>
+                <MDBBtn color="secondary" onClick={onClose}>Close</MDBBtn>
                 <MDBBtn color="primary" onClick={onLocalSubmit}>Save changes</MDBBtn>
             </MDBModalFooter>
         </MDBModal>
