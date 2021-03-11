@@ -61,23 +61,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	client, err := wgctrl.New()
-	if err != nil {
-		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
-	}
-	wgClient = client
-
 	initVarFolder()
-	initPrivateKey()
-	initPublicKey()
-	printConfiguration()
 
 	Db = initDatabase(databasePtr)
 	//goland:noinspection ALL
 	defer Db.Close()
 
-	syncDatabaseWireGuard()
+	initWireguard()
 
+	printConfiguration()
 	router := NewRouter(httpsCorsPtr, httpsPortPtr)
 	srv := initWebserver(httpsPortPtr, router, httpsCrtPtr, httpsKeyPtr)
 
@@ -260,43 +252,46 @@ func removeIndexFromList(list allClients, i int) allClients {
 	return list[:len(list)-1]
 }
 
-func syncDatabaseWireGuard() {
+func initWireguard() {
+	initPrivateKey()
+	initPublicKey()
+	client, err := wgctrl.New()
+	if err != nil {
+		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
+	}
+	wgClient = client
 	allClients := *ClientList()
 
-	peers := []wgtypes.PeerConfig{}
 	device, err := wgClient.Device(*wgDeviceName)
-
-	if err != nil {
-		log.Fatalf("WireGuard: Could not configure device %s: %s", *wgDeviceName, err)
+	if os.IsNotExist(err) {
+		tmpDevice, err := createInterface()
+		if err != nil {
+			log.Fatalf("WireGuard: Could not create interface %s: %s", *wgDeviceName, err)
+		}
+		device = tmpDevice
 	}
 
-	// Remove clients from wireguard
+	cfg := wgtypes.Config{
+		PrivateKey:   &wgPrivateKey,
+		ListenPort:   wgListenPortPtr,
+		ReplacePeers: false,
+		Peers:        []wgtypes.PeerConfig{},
+	}
 	for _, peer := range device.Peers {
-		peer := wgtypes.PeerConfig{
+		cfg.Peers = append(cfg.Peers, wgtypes.PeerConfig{
 			PublicKey:         peer.PublicKey,
-			Remove:            false,
+			Remove:            true,
 			UpdateOnly:        false,
 			ReplaceAllowedIPs: false,
 			AllowedIPs:        peer.AllowedIPs,
-		}
-
-		for i, client := range allClients {
-			if client.PublicKey == peer.PublicKey.String() {
-				peer.AllowedIPs = getAllowedIpNets(&client)
-				peer.UpdateOnly = true
-				peer.ReplaceAllowedIPs = true
-
-				allClients = removeIndexFromList(allClients, i)
-				break
-			}
-		}
-
-		peers = append(peers, peer)
+		})
+	}
+	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
+	if err != nil {
+		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
 	}
 
-	// Add missing clients to WireGuard
 	for _, client := range allClients {
-
 		key, err := wgtypes.ParseKey(client.PublicKey)
 		if err != nil {
 			log.Printf("Could not add missing WireGuard Client %s: %s", client.Name, err)
@@ -311,21 +306,18 @@ func syncDatabaseWireGuard() {
 			AllowedIPs:        getAllowedIpNets(&client),
 		}
 
-		peers = append(peers, newPeer)
-	}
-
-	cfg := wgtypes.Config{
-		PrivateKey:   &wgPrivateKey,
-		ListenPort:   wgListenPortPtr,
-		FirewallMark: &device.FirewallMark,
-		ReplacePeers: false,
-		Peers:        peers,
+		cfg.Peers = append(cfg.Peers, newPeer)
 	}
 
 	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
 	if err != nil {
 		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
 	}
+}
+
+func createInterface() (*wgtypes.Device, *error) {
+	err := fmt.Errorf("not implemented yet")
+	return nil, &err
 }
 
 func printConfiguration() {

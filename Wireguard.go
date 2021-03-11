@@ -7,33 +7,22 @@ import (
 )
 
 func removeClient(client *Client) {
-	device, err := wgClient.Device(*wgDeviceName)
-	if err != nil {
-		log.Fatalf("WireGuard: Could not configure device %s: %s", *wgDeviceName, err)
-	}
-	peers := []wgtypes.PeerConfig{}
-
-	for _, peer := range device.Peers {
-		shouldRemove := peer.PublicKey.String() == client.PublicKey
-		peer := wgtypes.PeerConfig{
-			PublicKey:         peer.PublicKey,
-			Remove:            shouldRemove,
-			UpdateOnly:        true,
-			ReplaceAllowedIPs: true,
-			AllowedIPs:        peer.AllowedIPs,
-		}
-		peers = append(peers, peer)
-	}
+	key, _ := wgtypes.ParseKey(client.PublicKey)
 
 	cfg := wgtypes.Config{
 		PrivateKey:   &wgPrivateKey,
 		ListenPort:   wgListenPortPtr,
-		FirewallMark: &device.FirewallMark,
 		ReplacePeers: false,
-		Peers:        peers,
+		Peers: []wgtypes.PeerConfig{{
+			PublicKey:         key,
+			Remove:            true,
+			UpdateOnly:        false,
+			ReplaceAllowedIPs: false,
+			AllowedIPs:        getAllowedIpNets(client),
+		}},
 	}
 
-	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
+	err := wgClient.ConfigureDevice(*wgDeviceName, cfg)
 	if err != nil {
 		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
 	}
@@ -45,7 +34,6 @@ func addClient(client *Client) {
 	if err != nil {
 		log.Printf("Could not parse client key: %s", err)
 	}
-
 	newPeer := wgtypes.PeerConfig{
 		PublicKey:         key,
 		Remove:            false,
@@ -54,30 +42,11 @@ func addClient(client *Client) {
 		AllowedIPs:        getAllowedIpNets(client),
 	}
 
-	device, err := wgClient.Device(*wgDeviceName)
-	if err != nil {
-		log.Fatalf("WireGuard: Could not configure device %s: %s", *wgDeviceName, err)
-	}
-	peers := []wgtypes.PeerConfig{}
-
-	for _, peer := range device.Peers {
-		peer := wgtypes.PeerConfig{
-			PublicKey:         peer.PublicKey,
-			Remove:            false,
-			UpdateOnly:        false,
-			ReplaceAllowedIPs: false,
-			AllowedIPs:        peer.AllowedIPs,
-		}
-		peers = append(peers, peer)
-	}
-	peers = append(peers, newPeer)
-
 	cfg := wgtypes.Config{
 		PrivateKey:   &wgPrivateKey,
 		ListenPort:   wgListenPortPtr,
-		FirewallMark: &device.FirewallMark,
 		ReplacePeers: false,
-		Peers:        peers,
+		Peers:        []wgtypes.PeerConfig{newPeer},
 	}
 
 	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
