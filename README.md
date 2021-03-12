@@ -31,5 +31,21 @@
     - [X] Find next available IP
     - [ ] Validate IP on create
     - [ ] Create wgX device if missing (depending on platform)
+        - Init device if not up
+          ```shell
+          ip -4 address add 10.0.0.1/24 dev wg0
+          ip link set mtu 1432 up dev wg0
+          sysctl -q net.ipv4.conf.all.src_valid_mark=1
+          sysctl -q net.ipv4.ip_forward=1
+          ```
+        - Redo available ip-addresses, claim one for WireGuard Servre
     - [ ] Use a userspace WireGuard implementation: https://github.com/cloudflare/boringtun
  
+
+## Ro run:
+Install boringtun: `cargo install boringtun`
+Start boringtun: `WG_SUDO=1 sudo ~/.cargo/bin/boringtun -v debug -f wg0`
+
+Requires GO 1.16
+Install wg-vpn-server: `go get github.com/richard87/wg-vpn-server`
+Start `sudo wg-vpn-server -wg-endpoint vpn.example.com`
