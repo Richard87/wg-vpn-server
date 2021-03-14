@@ -27,6 +27,19 @@ import (
 	"time"
 )
 
+type UsersFlag []string
+
+func (i *UsersFlag) String() string {
+	return "API User, can be repeated to create more users. For example: \n" +
+		"-user 'admin:$argon2i$v=19$m=16,t=2,p=1$S1p3Z0FTQTViZkh0MURTVA$jxPFAzQ3kSrbEPSibCQIrg'\n" +
+		"(If no users specified, a default admin password will be generated and printed to console"
+}
+
+func (i *UsersFlag) Set(value string) error {
+	*i = append(*i, value)
+	return nil
+}
+
 var (
 	//go:embed ui/build
 	embededFiles       embed.FS
@@ -44,22 +57,26 @@ var (
 	clientsSubnetPtr = flag.String("client-subnet", "10.0.0.0/24", "Specify default client subnet")
 	databasePtr      = flag.String("database", "./var/wg.db", "Path to store clients.")
 
-	usersPtr     = flag.String("user", "", "API User, can be repeated to create more users. For example: \n-user 'admin:$argon2i$v=19$m=16,t=2,p=1$S1p3Z0FTQTViZkh0MURTVA$jxPFAzQ3kSrbEPSibCQIrg'\n(If no users specified, a default admin password will be generated and printed to console")
-	httpsPortPtr = flag.Int("https-port", 8443, "API Webserver port")
-	httpsKeyPtr  = flag.String("https-key", "./var/server_key.pem", "Path to store PKCS8 webserver key (If missing new will be generated).")
-	httpsCrtPtr  = flag.String("https-crt", "./var/server_crt.pem", "Path to store webserver certificate (If missing new will be generated).")
-	httpsCorsPtr = flag.String("https-cors", "http://localhost:3000", "Which clients are allowed to connect (can be repeated)")
-	helpPtr      = flag.Bool("help", false, "Show this help")
+	usersPtr           UsersFlag
+	httpsPortPtr       = flag.Int("https-port", 8443, "API Webserver port")
+	httpsKeyPtr        = flag.String("https-key", "./var/server_key.pem", "Path to store PKCS8 webserver key (If missing new will be generated).")
+	httpsCrtPtr        = flag.String("https-crt", "./var/server_crt.pem", "Path to store webserver certificate (If missing new will be generated).")
+	httpsCorsPtr       = flag.String("https-cors", "http://localhost:3000", "Which clients are allowed to connect (can be repeated)")
+	httpsJwtSigningKey = make([]byte, 12)
+	helpPtr            = flag.Bool("help", false, "Show this help")
 )
 
 func main() {
 
+	flag.Var(&usersPtr, "user", "API User, can be repeated to create more users. For example: \n-user 'admin:$argon2i$v=19$m=16,t=2,p=1$S1p3Z0FTQTViZkh0MURTVA$jxPFAzQ3kSrbEPSibCQIrg'\n(If no users specified, a default admin password will be generated and printed to console")
 	flag.Parse()
 
 	if *wgEndpointPtr == "" {
 		log.Println("You must supply -wg-endpoint. For example vpn.example.com:51820 or 10.10.10:51820")
 		os.Exit(1)
 	}
+
+	log.Printf("Users: %v", usersPtr)
 
 	initVarFolder()
 
@@ -68,6 +85,8 @@ func main() {
 	defer Db.Close()
 
 	initWireguard()
+
+	_, _ = rand.Read(httpsJwtSigningKey)
 
 	printConfiguration()
 	router := NewRouter(httpsCorsPtr, httpsPortPtr)
@@ -349,6 +368,6 @@ func printConfiguration() {
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)
 	log.Printf("Using certificate:      %s (key: %s)", *httpsCrtPtr, *httpsKeyPtr)
 	log.Printf("Using CORS       :      %v", *httpsCorsPtr)
-	log.Printf("Using api-users:        %v", *usersPtr)
+	log.Printf("Using api-users:        %v", usersPtr)
 	fmt.Print("\n")
 }

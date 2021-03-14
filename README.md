@@ -14,8 +14,9 @@
         - [X] Delete
     - [X] Config
         - [X] Get endpoint
-        - [ ] Get next available IP
+        - [X] Get next available IP
         - [X] Use real endpoint
+    - [X] Authentication
 - [ ] UI
     - [X] Create clients
     - [X] List clients
