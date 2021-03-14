@@ -1,31 +1,21 @@
-import {useQuery} from "react-query"
-import styled from "styled-components"
-import {MDBContainer, MDBNavbar, MDBNavbarBrand,} from "mdbreact";
-import ClientCard from "./ClientCard";
-import CreateClient from "./CreateClient";
+import {
+    MDBBtn,
+    MDBCard,
+    MDBCardBody,
+    MDBCardHeader,
+    MDBContainer,
+    MDBIcon,
+    MDBInput, MDBModalFooter,
+    MDBNavbar,
+    MDBNavbarBrand,
+} from "mdbreact";
+import {BrowserRouter, Route, Routes, useNavigate} from "react-router-dom";
+import Dashboard from "./Dashboard";
+import {useState} from "react";
 
-const Grid = styled.div`
-  margin-top: 2rem;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
-  grid-gap: 2rem;
-`
 
 function App() {
-    const {data, isSuccess, refetch} = useQuery(["clients"], {
-        queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/clients`).then(res => res.json())
-    })
 
-    const onSubmit = (newClient) => {
-        return fetch(`${process.env.REACT_APP_API_SERVER}/clients`, {
-            method: "POST",
-            body: JSON.stringify(newClient)
-        }).then(() => refetch())
-    }
-
-    const onDelete = client => {
-        return fetch(`${process.env.REACT_APP_API_SERVER}/clients/${client.id}`, {method: "DELETE"}).then(() => refetch())
-    }
 
     return (
         <div className="App">
@@ -35,15 +25,65 @@ function App() {
                 </MDBNavbarBrand>
             </MDBNavbar>
             <MDBContainer>
-                <Grid>
-                    {isSuccess && data.map(client => <ClientCard onDelete={() => onDelete(client)} key={client.id} client={client}/>)}
-                </Grid>
+                <BrowserRouter>
+                    <Routes>
+                        <Route path={"/dashboard"} element={<Dashboard />} />
+                        <Route path={"/"} element={<Login />} />
+                    </Routes>
+                </BrowserRouter>
             </MDBContainer>
-            <CreateClient onSubmit={onSubmit}/>
         </div>
     );
 }
 
 export default App;
 
+const Login = () => {
+    const [username, setUsername] = useState("")
+    const [password, setPassword] = useState("")
+    const nav = useNavigate()
+
+    const onLogin = () => {
+        console.log(username, password)
+        nav("/dashboard")
+    }
+
+    return <div style={{paddingTop:"2em"}}><MDBCard>
+        <MDBCardHeader className="form-header deep-blue-gradient">
+            <h3 className="my-3">
+                <MDBIcon icon="lock"/> Login:
+            </h3>
+        </MDBCardHeader>
+        <MDBCardBody>
+
+            <MDBInput
+                label="Type your username"
+                onChange={e => setUsername(e.target.value)}
+                value={username}
+                icon="user"
+                group
+                type="text"
+                validate
+                error="wrong"
+                success="right"
+            />
+            <MDBInput
+                label="Type your password"
+                onChange={e => setPassword(e.target.value)}
+                value={password}
+                icon="lock"
+                group
+                type="password"
+                validate
+            />
+
+
+            <div className="text-center mt-4">
+                <MDBBtn color="light-blue" className="mb-3" type="button" onClick={onLogin}>
+                    Login
+                </MDBBtn>
+            </div>
+        </MDBCardBody>
+    </MDBCard></div>
+}
 
