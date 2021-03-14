@@ -301,8 +301,8 @@ func Authenticator(inner http.Handler) http.Handler {
 			w.WriteHeader(http.StatusForbidden)
 			return
 		}
+
 		tokenString := fmt.Sprintf("%s.%s", authParts[1], authCookie.Value)
-		log.Printf("Test: %s", tokenString)
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if token.Header["alg"] != "HS256" {
 				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
