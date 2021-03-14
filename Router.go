@@ -77,20 +77,15 @@ func remove(s []string, r string) []string {
 func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-type", "application/json")
 
-	ip, ipnet, err := net.ParseCIDR(*clientsSubnetPtr)
-	if err != nil {
+	ips := findAvailableIps()
+	if len(ips) <= 1 {
+		log.Print("No IP's in range!")
+		w.WriteHeader(400)
 		return
 	}
 
-	var ips []string
-	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
-		ips = append(ips, ip.String()+"/32")
-	}
-
-	if len(ips) <= 2 || ips == nil {
-		log.Fatal("No IP's in range!")
-	}
-	ips = ips[1 : len(ips)-1]
+	// Keep first ip for gateway
+	ips = ips[1:]
 
 	_ = Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("clients"))
@@ -119,6 +114,25 @@ func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 		PublicKey:        wgPublicKey.String(),
 		RecommendedDNS:   *wgRecommendedDns,
 	})
+}
+
+func findAvailableIps() []string {
+	ip, ipnet, err := net.ParseCIDR(*clientsSubnetPtr)
+	if err != nil {
+		return []string{}
+	}
+
+	var ips []string
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
+		ips = append(ips, ip.String()+"/32")
+	}
+
+	if len(ips) <= 2 || ips == nil {
+		return []string{}
+	}
+
+	ips = ips[1 : len(ips)-1]
+	return ips
 }
 
 var routes = Routes{

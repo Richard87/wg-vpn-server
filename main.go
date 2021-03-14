@@ -264,6 +264,7 @@ func initWireguard() {
 
 	device, err := wgClient.Device(*wgDeviceName)
 	if os.IsNotExist(err) {
+		return
 		tmpDevice, err := createInterface()
 		if err != nil {
 			log.Fatalf("WireGuard: Could not create interface %s: %s", *wgDeviceName, err)
