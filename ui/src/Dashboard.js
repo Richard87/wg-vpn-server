@@ -13,9 +13,7 @@ const Grid = styled.div`
 
 
 export default function Dashboard() {
-    const {data, isSuccess, refetch} = useQuery(["clients"], {
-        queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/clients`).then(res => res.json())
-    })
+    const {data, isSuccess, refetch} = useQuery(`${process.env.REACT_APP_API_SERVER}/clients`)
 
     const onSubmit = (newClient) => {
         return fetch(`${process.env.REACT_APP_API_SERVER}/clients`, {

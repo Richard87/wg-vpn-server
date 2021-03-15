@@ -37,28 +37,30 @@ PersistentKeepalive = 25`
 
 export default function CreateClient ({onSubmit}) {
     const [name, setName] = useState("")
-    const [ip, setIp] = useState("")
+    const [ip, setIp] = useState(null)
+    const [defaultIp, setDefaultIp] = useState("")
     const [publicKey, setPublicKey] = useState("")
     const [showNewClient, setShowNewClient] = useState(false)
     const [showConfig, setShowConfig] = useState(false)
     const [privateKey, setPrivateKey] = useState(null)
 
-    const {data: config, refetch} = useQuery("config", {
-        queryFn: () => fetch(`${process.env.REACT_APP_API_SERVER}/config`).then(res => res.json()),
-        onSuccess: data => setIp(data.nextAvailableIp4)
+    const {data: config, refetch} = useQuery(`${process.env.REACT_APP_API_SERVER}/config`, {
+        onSuccess: data => setDefaultIp(data.nextAvailableIp4)
     })
+
+    console.log({ip, defaultIp})
 
     const onLocalSubmit = () => {
         setShowNewClient(false)
         onSubmit({name, allowedIps: [ip], publicKey}).then(refetch)
         setPublicKey("")
-        setIp("")
+        setIp(null)
         setName("")
     }
 
     const onClose = () => {
         setPublicKey("")
-        setIp("")
+        setIp(null)
         setName("")
         setShowNewClient(false)
     }
@@ -85,11 +87,13 @@ export default function CreateClient ({onSubmit}) {
                                   value={name}
                                   onChange={e => setName(e.target.value)}
                                   name="name"/>
+
                         <MDBInput icon="globe-europe"
                                   label="IP Address"
-                                  value={ip}
+                                  value={typeof ip === "string" ? ip : defaultIp}
                                   onChange={e => setIp(e.target.value)}
                                   name="ip"/>
+
                         <MDBInput icon="key"
                                   label="Public key"
                                   value={publicKey}

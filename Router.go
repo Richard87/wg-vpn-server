@@ -3,10 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	bolt "go.etcd.io/bbolt"
-	"gopkg.in/dgrijalva/jwt-go.v3"
 	"io"
 	"io/fs"
 	"io/ioutil"
@@ -35,6 +35,7 @@ func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Authorization", "Content-type", "Access-Control-Allow-Origin"})
 	originsOk := handlers.AllowedOrigins([]string{*httpsCorsPtr, fmt.Sprintf("https://localhost:%d", *httpsPortPtr)})
 	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS", "DELETE"})
+	credentialsOk := handlers.AllowCredentials()
 
 	for _, route := range routes {
 		var handler http.Handler
@@ -54,7 +55,7 @@ func NewRouter(httpsCorsPtr *string, httpsPortPtr *int) http.Handler {
 
 	subFs, _ := fs.Sub(embededFiles, "ui/build")
 	router.PathPrefix("/").Handler(http.FileServer(http.FS(subFs)))
-	return handlers.CORS(originsOk, headersOk, methodsOk)(router)
+	return handlers.CORS(originsOk, headersOk, methodsOk, credentialsOk)(router)
 }
 
 type Config struct {
@@ -62,11 +63,6 @@ type Config struct {
 	NextAvailableIp4 string `json:"nextAvailableIp4"`
 	PublicKey        string `json:"publicKey"`
 	RecommendedDNS   string `json:"recommendedDNS"`
-}
-
-type Jwt struct {
-	jwt.StandardClaims
-	Username string
 }
 
 type Login struct {
@@ -146,7 +142,7 @@ func apiAuthenticate(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   3600 * 2,
 		Secure:   true,
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	w.Header().Add("Content-type", "application/json; charset=UTF-8")
