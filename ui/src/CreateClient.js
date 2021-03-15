@@ -48,8 +48,6 @@ export default function CreateClient ({onSubmit}) {
         onSuccess: data => setDefaultIp(data.nextAvailableIp4)
     })
 
-    console.log({ip, defaultIp})
-
     const onLocalSubmit = () => {
         setShowNewClient(false)
         onSubmit({name, allowedIps: [ip], publicKey}).then(refetch)
