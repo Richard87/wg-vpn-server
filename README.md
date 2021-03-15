@@ -23,8 +23,8 @@
     - [X] Generate QR Code
     - [X] Generate Config
     - [X] Delete Client
+    - [X] Authentication
     - [ ] Confirm deletion
-    - [ ] Authentication
 - [ ] WireGuard
     - [X] Configure with clients from client.db (watch for changes) / generate wg0.conf
     - [X] Generate Private key if missing
