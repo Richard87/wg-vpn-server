@@ -4,15 +4,18 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/rand"
+	crand "crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"embed"
+	"encoding/binary"
+	"encoding/json"
 	"encoding/pem"
 	"flag"
 	"fmt"
+	"github.com/alexedwards/argon2id"
 	_ "github.com/mdlayher/genetlink"
 	_ "github.com/mdlayher/netlink"
 	_ "github.com/mdlayher/netlink/nlenc"
@@ -24,10 +27,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"strings"
 	"time"
 )
 
 type UsersFlag []string
+
+type User struct {
+	Username string
+	Hash     string
+	Role     string
+}
 
 func (i *UsersFlag) String() string {
 	return "API User, can be repeated to create more users. For example: \n" +
@@ -76,17 +87,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Printf("Users: %v", usersPtr)
-
 	initVarFolder()
 
 	Db = initDatabase(databasePtr)
 	//goland:noinspection ALL
 	defer Db.Close()
 
+	initUsers()
 	initWireguard()
 
-	_, _ = rand.Read(httpsJwtSigningKey)
+	_, _ = crand.Read(httpsJwtSigningKey)
 
 	printConfiguration()
 	router := NewRouter(httpsCorsPtr, httpsPortPtr)
@@ -101,6 +111,145 @@ func main() {
 	_ = srv.Shutdown(ctx)
 	log.Println("WireGuard: shutting down")
 	os.Exit(0)
+}
+
+func initUsers() {
+	err := Db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists([]byte("users"))
+		if err != nil {
+			log.Fatalf("Could not create users database: %s", err)
+		}
+
+		usersCreated := false
+
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			usersCreated = true
+			var user = &User{}
+			err := json.Unmarshal(v, user)
+			if err != nil {
+				return fmt.Errorf("error in users database! Failed user: %d (%v): %s", k, v, err)
+			}
+
+			for i, u := range usersPtr {
+				parts := strings.Split(u, ":")
+				if len(parts) < 2 {
+					return fmt.Errorf("error in users database! Failed user: %d (%v)", i, parts)
+				}
+
+				if parts[0] != user.Username {
+					continue
+				}
+
+				hash, err := argon2id.CreateHash(parts[1], &argon2id.Params{
+					Memory:      65536,
+					Iterations:  19,
+					Parallelism: uint8(runtime.NumCPU()),
+					SaltLength:  16,
+					KeyLength:   16,
+				})
+				if err != nil {
+					return fmt.Errorf("could not update hash for %s: %s", user.Username, err)
+				}
+
+				user.Hash = hash
+				if len(parts) == 3 {
+					user.Role = parts[2]
+				}
+
+				bytes, err := json.Marshal(user)
+				if err != nil {
+					return fmt.Errorf("could not marshall user %s: %s", user.Username, err)
+				}
+				err = b.Put(k, bytes)
+				if err != nil {
+					return fmt.Errorf("could not save user %s: %s", user.Username, err)
+				}
+				removeIndexFromUsersList(i)
+				break
+			}
+		}
+
+		for i, u := range usersPtr {
+			var user = &User{}
+			parts := strings.Split(u, ":")
+			if len(parts) < 2 {
+				return fmt.Errorf("error in users database! Failed user: %d (%v)", i, parts)
+			}
+			user.Username = parts[0]
+
+			hash, err := argon2id.CreateHash(parts[1], &argon2id.Params{
+				Memory:      65536,
+				Iterations:  19,
+				Parallelism: uint8(runtime.NumCPU()),
+				SaltLength:  16,
+				KeyLength:   16,
+			})
+			if err != nil {
+				return fmt.Errorf("could not update hash for %s: %s", user.Username, err)
+			}
+
+			user.Hash = hash
+			if len(parts) == 3 {
+				user.Role = parts[2]
+			}
+
+			bytes, err := json.Marshal(user)
+			if err != nil {
+				return fmt.Errorf("could not marshall user %s: %s", user.Username, err)
+			}
+			sequence, err := b.NextSequence()
+			sequenceBytes := make([]byte, 8)
+			binary.LittleEndian.PutUint64(sequenceBytes, sequence)
+			err = b.Put(sequenceBytes, bytes)
+			if err != nil {
+				return fmt.Errorf("could not save user %s: %s", user.Username, err)
+			}
+			usersCreated = true
+		}
+
+		if !usersCreated {
+			password, err := generatePassword(10)
+			if err != nil {
+				return fmt.Errorf("could not generate admin password: %s", err)
+			}
+
+			log.Println("Creating admin user with password: " + password)
+			hash, err := argon2id.CreateHash(password, &argon2id.Params{
+				Memory:      65536,
+				Iterations:  19,
+				Parallelism: uint8(runtime.NumCPU()),
+				SaltLength:  16,
+				KeyLength:   16,
+			})
+			if err != nil {
+				return fmt.Errorf("could not generate admin password: %s", err)
+			}
+
+			newUser := User{
+				Username: "admin",
+				Hash:     hash,
+				Role:     "admin",
+			}
+
+			bytes, err := json.Marshal(newUser)
+			if err != nil {
+				return fmt.Errorf("could not marshall user %s: %s", newUser.Username, err)
+			}
+			sequence, err := b.NextSequence()
+			sequenceBytes := make([]byte, 8)
+			binary.LittleEndian.PutUint64(sequenceBytes, sequence)
+			err = b.Put(sequenceBytes, bytes)
+			if err != nil {
+				return fmt.Errorf("could not save user %s: %s", newUser.Username, err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		log.Fatalf("CORE: Init users error: %s", err)
+	}
 }
 
 func initPublicKey() {
@@ -179,7 +328,7 @@ func initWebserver(httpsPortPtr *int, router http.Handler, httpsCrtPtr *string, 
 }
 func createCertificate(httpsKeyPtr *string, httpsCrtPtr *string) {
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
-	SerialNumber, _ := rand.Int(rand.Reader, serialNumberLimit)
+	SerialNumber, _ := crand.Int(crand.Reader, serialNumberLimit)
 	template := x509.Certificate{
 		SerialNumber: SerialNumber,
 		Subject: pkix.Name{
@@ -198,7 +347,7 @@ func createCertificate(httpsKeyPtr *string, httpsCrtPtr *string) {
 	block, _ := pem.Decode(privateFile)
 	priv, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey(priv), priv)
+	derBytes, err := x509.CreateCertificate(crand.Reader, &template, &template, publicKey(priv), priv)
 	if err != nil {
 		log.Fatalf("Failed to create certificate: %v", err)
 	}
@@ -213,7 +362,7 @@ func createCertificate(httpsKeyPtr *string, httpsCrtPtr *string) {
 }
 func createPrivateKey(httpsKeyPtr *string) {
 	// path/to/whatever exists
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	privateKey, err := rsa.GenerateKey(crand.Reader, 2048)
 	if err != nil {
 		panic(fmt.Errorf("could not generate private key! %v", err))
 	}
@@ -269,6 +418,10 @@ func removeIndexFromList(list allClients, i int) allClients {
 	list[i] = list[len(list)-1]
 	// We do not need to put s[i] at the end, as it will be discarded anyway
 	return list[:len(list)-1]
+}
+func removeIndexFromUsersList(i int) {
+	usersPtr[i] = usersPtr[len(usersPtr)-1]
+	usersPtr = usersPtr[:len(usersPtr)-1]
 }
 
 func initWireguard() {
@@ -368,6 +521,19 @@ func printConfiguration() {
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)
 	log.Printf("Using certificate:      %s (key: %s)", *httpsCrtPtr, *httpsKeyPtr)
 	log.Printf("Using CORS       :      %v", *httpsCorsPtr)
-	log.Printf("Using api-users:        %v", usersPtr)
 	fmt.Print("\n")
+}
+
+func generatePassword(length int) (string, error) {
+	chars := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZÅabcdefghijklmnopqrstuvwxyz0123456789")
+	var b strings.Builder
+	for i := 0; i < length; i++ {
+		n, err := crand.Int(crand.Reader, big.NewInt(int64(len(chars))))
+		if err != nil {
+			return "", err
+		}
+		b.WriteRune(chars[int(n.Int64())])
+	}
+	s := b.String()
+	return s, nil
 }

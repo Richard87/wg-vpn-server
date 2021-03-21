@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/alexedwards/argon2id"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
@@ -92,70 +93,104 @@ func remove(s []string, r string) []string {
 }
 
 func apiAuthenticate(w http.ResponseWriter, r *http.Request) {
-	var login Login
+	var login = Login{}
 
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
-	if err != nil {
-		panic(err)
-	}
-	if err := r.Body.Close(); err != nil {
-		log.Printf("API: Could not read body: %s", err)
-	}
-
-	if err := json.Unmarshal(body, &login); err != nil {
-		w.WriteHeader(400) // unprocessable entity
+	if err := parseJsonRequest(w, r, &login); err != nil {
+		w.WriteHeader(http.StatusInternalServerError) // unprocessable entity
+		log.Printf("API: Could not check password hash!: %s", err)
 		return
 	}
 
-	var password string
-	for _, u := range usersPtr {
-		u2 := strings.Split(u, ":")
-		if u2[0] == login.Username {
-			password = u2[1]
-			break
-		}
-	}
-
-	if password == "" || password != login.Password {
+	if login.Password == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"username": login.Username,
-		"exp":      time.Now().Add(time.Minute * 115).UnixNano(),
+	err := Db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("users"))
+
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			var user = &User{}
+			err := json.Unmarshal(v, user)
+			if err != nil {
+				return fmt.Errorf("error in users database! Failed user: %d (%v): %s", k, v, err)
+			}
+
+			if user.Username != login.Username {
+				continue
+			}
+
+			match, err := argon2id.ComparePasswordAndHash(login.Password, user.Hash)
+			if err != nil {
+				return fmt.Errorf("could not check password hash!: %s", err)
+			}
+
+			if !match {
+				w.WriteHeader(http.StatusUnauthorized)
+				return nil
+			}
+
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+				"username": login.Username,
+				"exp":      time.Now().Add(time.Minute * 115).UnixNano(),
+			})
+
+			tokenString, err := token.SignedString(httpsJwtSigningKey)
+			if err != nil {
+				return fmt.Errorf("could not sign jwt: %s", err)
+			}
+
+			parts := strings.Split(tokenString, ".")
+			http.SetCookie(w, &http.Cookie{
+				Name:     "auth",
+				Value:    parts[2],
+				Expires:  time.Now().Add(time.Hour * 2),
+				MaxAge:   3600 * 2,
+				Secure:   true,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+			})
+			tokenString = fmt.Sprintf("%s.%s", parts[0], parts[1])
+			writeJsonResponse(w, &LoginResponse{Token: tokenString})
+			return nil
+		}
+
+		w.WriteHeader(http.StatusUnauthorized)
+		return nil
 	})
 
-	tokenString, err := token.SignedString(httpsJwtSigningKey)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError) // unprocessable entity
-		log.Printf("API: Could not sign jwt: %s", err)
+		log.Printf("API: %s", err)
 		return
 	}
 
-	parts := strings.Split(tokenString, ".")
+}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth",
-		Value:    parts[2],
-		Expires:  time.Now().Add(time.Hour * 2),
-		MaxAge:   3600 * 2,
-		Secure:   true,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	w.Header().Add("Content-type", "application/json; charset=UTF-8")
-	bytes, err := json.Marshal(&LoginResponse{Token: fmt.Sprintf("%s.%s", parts[0], parts[1])})
+func parseJsonRequest(w http.ResponseWriter, r *http.Request, newObject interface{}) error {
+	content, err := ioutil.ReadAll(io.LimitReader(r.Body, 1048576))
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError) // unprocessable entity
-		log.Printf("API: Could not marshall response: %s", err)
-		return
+		log.Fatalf("Could not read from request stream: %s", err)
+	}
+	if err := r.Body.Close(); err != nil {
+		w.WriteHeader(http.StatusBadRequest) // unprocessable entity
+		return fmt.Errorf("API: Could not parse json: %s", err)
+	}
+	if err := json.Unmarshal(content, newObject); err != nil {
+		w.WriteHeader(http.StatusBadRequest) // unprocessable entity
+		return fmt.Errorf("\"API: Could not parse body: %s\"", err)
 	}
 
-	if _, err = w.Write(bytes); err != nil {
+	return nil
+}
+
+func writeJsonResponse(w http.ResponseWriter, object interface{}) {
+	w.Header().Add("Content-Type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(object); err != nil {
 		w.WriteHeader(http.StatusInternalServerError) // unprocessable entity
-		log.Printf("API: Could not write response: %s", err)
+		log.Printf("API: Could not check password hash!: %s", err)
 		return
 	}
 }
