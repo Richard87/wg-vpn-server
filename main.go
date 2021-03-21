@@ -20,6 +20,10 @@ import (
 	_ "github.com/mdlayher/netlink"
 	_ "github.com/mdlayher/netlink/nlenc"
 	bolt "go.etcd.io/bbolt"
+	"golang.zx2c4.com/wireguard/device"
+	_ "golang.zx2c4.com/wireguard/device"
+	"golang.zx2c4.com/wireguard/ipc"
+	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log"
@@ -29,8 +33,11 @@ import (
 	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
+
+const MTU = 1420
 
 type UsersFlag []string
 
@@ -62,6 +69,7 @@ var (
 	wgListenPortPtr    = flag.Int("wg-listen-port", 51820, "Specify WireGuard Listen port")
 	wgRecommendedDns   = flag.String("wg-dns", "1.1.1.1", "Specify recommended DNS for clients.")
 	wgDeviceName       = flag.String("wg-device", "wg0", "WireGuard device name")
+	wgBoringtunPath    = flag.String("wg-boringtun", "", "Path to boringtun")
 	wgPublicKey        wgtypes.Key
 	wgPrivateKey       wgtypes.Key
 
@@ -72,7 +80,7 @@ var (
 	httpsPortPtr       = flag.Int("https-port", 8443, "API Webserver port")
 	httpsKeyPtr        = flag.String("https-key", "./var/server_key.pem", "Path to store PKCS8 webserver key (If missing new will be generated).")
 	httpsCrtPtr        = flag.String("https-crt", "./var/server_crt.pem", "Path to store webserver certificate (If missing new will be generated).")
-	httpsCorsPtr       = flag.String("https-cors", "http://localhost:3000", "Which clients are allowed to connect (can be repeated)")
+	httpsCorsPtr       = flag.String("https-cors", "https://localhost:3000", "Which clients are allowed to connect (can be repeated)")
 	httpsJwtSigningKey = make([]byte, 12)
 	helpPtr            = flag.Bool("help", false, "Show this help")
 )
@@ -102,14 +110,15 @@ func main() {
 	router := NewRouter(httpsCorsPtr, httpsPortPtr)
 	srv := initWebserver(httpsPortPtr, router, httpsCrtPtr, httpsKeyPtr)
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	<-c // Block until we receive our signal.
+	termSignal := make(chan os.Signal, 1)
+	signal.Notify(termSignal, syscall.SIGTERM)
+	signal.Notify(termSignal, os.Interrupt)
+	<-termSignal // Block until we receive our signal.
+	log.Println("API: shutting down")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(ctx)
-	log.Println("WireGuard: shutting down")
 	os.Exit(0)
 }
 
@@ -427,6 +436,15 @@ func removeIndexFromUsersList(i int) {
 func initWireguard() {
 	initPrivateKey()
 	initPublicKey()
+
+	// TODO:
+	// [X] Currently using embedded Wireguard if interface doesn't exist
+	// [ ] Check if interface exist
+	// [ ] If it doesn't exist, create it
+	// [ ] Use native wireguard if it exist
+	//   [ ] If native doesnt exist, start boringtun if exist in path / boringtunPath variable
+	//   [ ] if boringtun doesn't exist, use embedded
+
 	client, err := wgctrl.New()
 	if err != nil {
 		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
@@ -434,14 +452,16 @@ func initWireguard() {
 	wgClient = client
 	allClients := *ClientList()
 
-	device, err := wgClient.Device(*wgDeviceName)
-	if os.IsNotExist(err) {
-		return
-		tmpDevice, err := createInterface()
-		if err != nil {
-			log.Fatalf("WireGuard: Could not create interface %s: %s", *wgDeviceName, err)
-		}
-		device = tmpDevice
+	wgDevice, err := wgClient.Device(*wgDeviceName)
+	if err != nil {
+		ready := make(chan bool, 1)
+		go runEmbeddedWireguard(ready)
+		<-ready
+	}
+
+	wgDevice, err = wgClient.Device(*wgDeviceName)
+	if err != nil {
+		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
 	}
 
 	cfg := wgtypes.Config{
@@ -450,7 +470,7 @@ func initWireguard() {
 		ReplacePeers: false,
 		Peers:        []wgtypes.PeerConfig{},
 	}
-	for _, peer := range device.Peers {
+	for _, peer := range wgDevice.Peers {
 		cfg.Peers = append(cfg.Peers, wgtypes.PeerConfig{
 			PublicKey:         peer.PublicKey,
 			Remove:            true,
@@ -488,9 +508,57 @@ func initWireguard() {
 	}
 }
 
-func createInterface() (*wgtypes.Device, *error) {
-	err := fmt.Errorf("not implemented yet")
-	return nil, &err
+func runEmbeddedWireguard(ready chan bool) {
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, syscall.SIGTERM)
+	signal.Notify(term, os.Interrupt)
+	tunDevice, err := tun.CreateTUN(*wgDeviceName, MTU)
+
+	if err != nil {
+		log.Fatalf("WireGuard: Could not create interface %s: %s", *wgDeviceName, err)
+	}
+	logger := device.NewLogger(
+		3,
+		fmt.Sprintf("(%s) ", *wgDeviceName),
+	)
+	wgInternalDevice := device.NewDevice(tunDevice, logger)
+
+	errs := make(chan error)
+
+	fileUapi, err := ipc.UAPIOpen(*wgDeviceName)
+	if err != nil {
+		log.Printf("Failed to openuapi socket: %v", err)
+		os.Exit(1)
+	}
+	uapi, err := ipc.UAPIListen(*wgDeviceName, fileUapi)
+	if err != nil {
+		log.Printf("Failed to listen on uapi socket: %v", err)
+		os.Exit(1)
+	}
+
+	go func() {
+		for {
+			conn, err := uapi.Accept()
+			if err != nil {
+				errs <- err
+				return
+			}
+			go wgInternalDevice.IpcHandle(conn)
+		}
+	}()
+
+	ready <- true
+	// wait for program to terminate
+
+	select {
+	case <-term:
+	case <-errs:
+	case <-wgInternalDevice.Wait():
+	}
+
+	// clean up
+	_ = uapi.Close()
+	wgInternalDevice.Close()
 }
 
 func printConfiguration() {
@@ -515,13 +583,14 @@ func printConfiguration() {
 	log.Printf("Using wg private key:   %s", *wgKeyPtr)
 	log.Printf("Using wg public key:    %s", wgPublicKey)
 	log.Printf("Using wg DNS:           %s", *wgRecommendedDns)
-	log.Printf("using wg endpoint:     %s", *wgEndpointPtr)
+	log.Printf("using wg endpoint:      %s", *wgEndpointPtr)
+	log.Printf("using wg boringtun:     %s", *wgBoringtunPath)
 	log.Printf("Using clients database: %s", *databasePtr)
 	log.Printf("Using client subnet:    %s", *clientsSubnetPtr)
 	log.Printf("Running webserver on:   https://0.0.0.0:%d", *httpsPortPtr)
 	log.Printf("Using certificate:      %s (key: %s)", *httpsCrtPtr, *httpsKeyPtr)
 	log.Printf("Using CORS       :      %v", *httpsCorsPtr)
-	fmt.Print("\n")
+	fmt.Println("\n")
 }
 
 func generatePassword(length int) (string, error) {

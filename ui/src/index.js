@@ -7,13 +7,18 @@ import 'bootstrap-css-only/css/bootstrap.min.css';
 import 'mdbreact/dist/css/mdb.css';
 import "./wireguard"
 
-export const authFetch = async (url, options = {}) => {
+export const authFetch = async (url, {json, ...options} = {}) => {
+        url = `${process.env.REACT_APP_API_SERVER}/${url}`
+
     const {headers = {}, ...restOptions} = options
     let jwt = window.localStorage.getItem("jwt");
     headers['Content-type'] = 'application/json'
     headers['Accept'] = 'application/json'
     if (jwt)
         headers.Authorization = "bearer " + jwt
+
+    if (json)
+        restOptions.body = JSON.stringify(json)
 
     let response = await fetch(url, {headers, credentials: "include",...restOptions});
 
@@ -27,7 +32,6 @@ export const authFetch = async (url, options = {}) => {
     if (contentType.indexOf(";") > 0)
         contentType = contentType.substr(0, contentType.indexOf(";"))
 
-    console.log(contentType)
     if (["application/json", "application/ld+json"].includes(contentType))
         return response.json()
 

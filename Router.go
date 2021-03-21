@@ -64,6 +64,7 @@ type Config struct {
 	NextAvailableIp4 string `json:"nextAvailableIp4"`
 	PublicKey        string `json:"publicKey"`
 	RecommendedDNS   string `json:"recommendedDNS"`
+	Mtu              int    `json:"mtu"`
 }
 
 type Login struct {
@@ -235,6 +236,7 @@ func apiGetConfig(w http.ResponseWriter, r *http.Request) {
 		NextAvailableIp4: nextAvailableIp4,
 		PublicKey:        wgPublicKey.String(),
 		RecommendedDNS:   *wgRecommendedDns,
+		Mtu:              MTU,
 	})
 }
 

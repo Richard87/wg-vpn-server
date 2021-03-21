@@ -10,7 +10,7 @@ export default function Login () {
     const nav = useNavigate()
 
     const onLogin = () => {
-        authFetch(`${process.env.REACT_APP_API_SERVER}/authenticate`, {
+        authFetch(`authenticate`, {
             body: JSON.stringify({username,password}),
             method: "POST"
         })

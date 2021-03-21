@@ -44,13 +44,13 @@ export default function CreateClient ({onSubmit}) {
     const [showConfig, setShowConfig] = useState(false)
     const [privateKey, setPrivateKey] = useState(null)
 
-    const {data: config, refetch} = useQuery(`${process.env.REACT_APP_API_SERVER}/config`, {
+    const {data: config, refetch} = useQuery(`config`, {
         onSuccess: data => setDefaultIp(data.nextAvailableIp4)
     })
 
     const onLocalSubmit = () => {
         setShowNewClient(false)
-        onSubmit({name, allowedIps: [ip], publicKey}).then(refetch)
+        onSubmit({name, allowedIps: [ip ?? defaultIp], publicKey}).then(refetch)
         setPublicKey("")
         setIp(null)
         setName("")
@@ -69,7 +69,7 @@ export default function CreateClient ({onSubmit}) {
         setPublicKey(publicKey)
     }
 
-    const currentConfig = wgConfig(name,ip,privateKey,config?.recommendedDNS,config?.endpoint,config?.publicKey)
+    const currentConfig = wgConfig(name,ip ?? defaultIp,privateKey,config?.recommendedDNS,config?.endpoint,config?.publicKey)
 
     return <>
         <FloatingButton onClick={() => setShowNewClient(true)} gradient="purple">
