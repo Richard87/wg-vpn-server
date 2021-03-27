@@ -14,7 +14,7 @@ import (
 
 func Authenticate(c *fiber.Ctx) error {
 	var login = Login{}
-	if err := c.BodyParser(login); err != nil {
+	if err := c.BodyParser(&login); err != nil {
 		c.Status(http.StatusBadRequest)
 		return nil
 	}

@@ -31,15 +31,13 @@ func main() {
 	database.InitUsers()
 
 	initWireguard()
-	api.InitRouter(embededFiles)
+	api.Run(embededFiles)
 
 	termSignal := make(chan os.Signal, 1)
 	signal.Notify(termSignal, syscall.SIGTERM)
 	signal.Notify(termSignal, os.Interrupt)
 	<-termSignal // Block until we receive our signal.
-	log.Println("API: shutting down")
-
-	_ = api.Router.Shutdown()
+	log.Println("Shutting down")
 	os.Exit(0)
 }
 
