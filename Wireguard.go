@@ -1,17 +1,19 @@
 package main
 
 import (
+	"github.com/Richard87/wg-vpn-server/config"
+	"github.com/Richard87/wg-vpn-server/database"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log"
 	"net"
 )
 
-func removeClient(client *Client) {
+func removeClient(client *database.Client) {
 	key, _ := wgtypes.ParseKey(client.PublicKey)
 
 	cfg := wgtypes.Config{
-		PrivateKey:   &wgPrivateKey,
-		ListenPort:   wgListenPortPtr,
+		PrivateKey:   &config.Config.WgPrivateKey,
+		ListenPort:   &config.Config.WgListenPort,
 		ReplacePeers: false,
 		Peers: []wgtypes.PeerConfig{{
 			PublicKey:         key,
@@ -22,13 +24,13 @@ func removeClient(client *Client) {
 		}},
 	}
 
-	err := wgClient.ConfigureDevice(*wgDeviceName, cfg)
+	err := config.Config.WgClient.ConfigureDevice(config.Config.WgDeviceName, cfg)
 	if err != nil {
-		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
+		log.Printf("Could not configure device %s: %s", config.Config.WgDeviceName, err)
 	}
 }
 
-func addClient(client *Client) {
+func addClient(client *database.Client) {
 
 	key, err := wgtypes.ParseKey(client.PublicKey)
 	if err != nil {
@@ -43,27 +45,25 @@ func addClient(client *Client) {
 	}
 
 	cfg := wgtypes.Config{
-		PrivateKey:   &wgPrivateKey,
-		ListenPort:   wgListenPortPtr,
+		PrivateKey:   &config.Config.WgPrivateKey,
+		ListenPort:   &config.Config.WgListenPort,
 		ReplacePeers: false,
 		Peers:        []wgtypes.PeerConfig{newPeer},
 	}
 
-	err = wgClient.ConfigureDevice(*wgDeviceName, cfg)
+	err = config.Config.WgClient.ConfigureDevice(config.Config.WgDeviceName, cfg)
 	if err != nil {
-		log.Printf("Could not configure device %s: %s", *wgDeviceName, err)
+		log.Printf("Could not configure device %s: %s", config.Config.WgDeviceName, err)
 	}
 }
 
-func getAllowedIpNets(client *Client) []net.IPNet {
-	allowedIps := []net.IPNet{}
-	for _, ip := range client.AllowedIps {
-		_, ipNet, err := net.ParseCIDR(ip)
-		if err != nil {
-			log.Printf("Could not parse client ip (%s): %s", ip, err)
-		}
-
-		allowedIps = append(allowedIps, *ipNet)
+func getAllowedIpNets(client *database.Client) []net.IPNet {
+	var allowedIps []net.IPNet
+	_, ipNet, err := net.ParseCIDR(client.AllowedIp4)
+	if err != nil {
+		log.Printf("Could not parse client ip (%s): %s", client.AllowedIp4, err)
 	}
+
+	allowedIps = append(allowedIps, *ipNet)
 	return allowedIps
 }
