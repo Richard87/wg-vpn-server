@@ -12,9 +12,6 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 )
 
 var Router *fiber.App
@@ -57,17 +54,12 @@ func Run(embeddedFiles embed.FS) {
 			log.Fatalf("API: Could not start: %s", err)
 		}
 	}()
+}
 
-	go func() {
-		termSignal := make(chan os.Signal, 1)
-		signal.Notify(termSignal, syscall.SIGTERM)
-		signal.Notify(termSignal, os.Interrupt)
-		<-termSignal // Block until we receive our signal.
-		log.Println("API: shutting down...")
+func Close() {
 
-		err = Router.Shutdown()
-		if err != nil {
-			log.Fatalf("API: Coult not shut down: %s", err)
-		}
-	}()
+	err := Router.Shutdown()
+	if err != nil {
+		log.Fatalf("API: Coult not shut down: %s", err)
+	}
 }

@@ -21,5 +21,4 @@ func InitDatabase() {
 	}
 
 	Connection = conn
-	log.Print("DB: configured.")
 }

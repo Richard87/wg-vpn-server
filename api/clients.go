@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/Richard87/wg-vpn-server/database"
+	"github.com/Richard87/wg-vpn-server/wireguard"
 	"github.com/gofiber/fiber/v2"
 	"net/http"
 )
@@ -35,7 +36,7 @@ func GetClients(c *fiber.Ctx) error {
 }
 
 func CreateClient(c *fiber.Ctx) error {
-	var newClient = database.Client{}
+	var newClient = new(database.Client)
 	if err := c.BodyParser(newClient); err != nil {
 		return c.Status(http.StatusBadRequest).Format("Bad request")
 	}
@@ -43,9 +44,10 @@ func CreateClient(c *fiber.Ctx) error {
 	//TODO: Validate IP
 
 	database.Connection.Create(newClient)
+	wireguard.AddClient(newClient)
 
 	return c.Status(http.StatusOK).JSON(&ClientResponse{
-		Client:          newClient,
+		Client:          *newClient,
 		LatestHandshake: "2021-01-09T21:15:37.189Z",
 		Endpoint:        "77.18.62.145:15427",
 		SentBytes:       32165498,
@@ -82,12 +84,13 @@ func DeleteClient(c *fiber.Ctx) error {
 		return c.Status(http.StatusBadRequest).Format("Bad request")
 	}
 
-	client := database.Client{}
-	database.Connection.Find(&client, id)
+	client := new(database.Client)
+	database.Connection.Find(client, id)
 	if client.PublicKey == "" {
 		return c.Status(http.StatusNotFound).Format("Not found")
 	}
 
-	database.Connection.Delete(&client)
+	wireguard.RemoveClient(client)
+	database.Connection.Delete(client)
 	return c.Status(http.StatusNoContent).JSON(nil)
 }
