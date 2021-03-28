@@ -18,7 +18,35 @@ func Init() {
 	initPrivateKey()
 	initPublicKey()
 	// TODO: Initialise interface
+	initInterface()
+}
 
+func initInterface() {
+	iface, err := net.InterfaceByName(config.Config.WgDeviceName)
+
+	if err != nil {
+		_, err := tun.CreateTUN(config.Config.WgDeviceName, config.MTU)
+		if err != nil {
+			log.Fatalf("WG: Could not create interface %s: %s", config.Config.WgDeviceName, err)
+		}
+
+		iface, err = net.InterfaceByName(config.Config.WgDeviceName)
+		if err != nil {
+			log.Fatalf("WG: Could not open interface %s: %s", config.Config.WgDeviceName, err)
+		}
+	}
+
+	addrs, err := iface.Addrs()
+	if err != nil {
+		log.Fatalf("WG: interface %s could not be read: %s", config.Config.WgDeviceName, err)
+	}
+
+	if len(addrs) == 0 {
+		err := configureInterface(config.Config.ClientsSubnet, config.Config.WgDeviceName)
+		if err != nil {
+			log.Fatalf("WG: interface %s could not set IP: %s", config.Config.WgDeviceName, err)
+		}
+	}
 }
 
 func Close() {
@@ -43,7 +71,7 @@ func Run() {
 	if err != nil {
 		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
 	}
-	allClients := []database.Client{}
+	allClients := make([]database.Client, 100)
 	database.Connection.Find(&allClients)
 
 	wgDevice, err := client.Device(config.Config.WgDeviceName)

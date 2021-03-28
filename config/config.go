@@ -8,6 +8,8 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 	"log"
 	"os"
+	"runtime"
+	"strings"
 )
 
 type UsersFlag []string
@@ -51,13 +53,17 @@ type ConfigStruct struct {
 
 func InitFlags() {
 	initVarFolder()
+	defaultWgDeviceName := "wg0"
+	if runtime.GOOS == "darwin" {
+		defaultWgDeviceName = "utun0"
+	}
 
 	flag.BoolVar(&Config.WgCreateMissing, "wg-create-private-key-if-missing", false, "Set to generate private key if missing. WARNING, This will break existing clients!")
 	flag.StringVar(&Config.WgKey, "wg-private-key", "./var/wg.private", "Specify WireGuard key file location")
 	flag.StringVar(&Config.WgEndpoint, "wg-endpoint", "", "Specify WireGuard public IP and Port. For example 2.2.2.2")
 	flag.IntVar(&Config.WgListenPort, "wg-listen-port", 51820, "Specify WireGuard Listen port")
 	flag.StringVar(&Config.WgRecommendedDns, "wg-dns", "1.1.1.1", "Specify recommended DNS for clients.")
-	flag.StringVar(&Config.WgDeviceName, "wg-device", "wg0", "WireGuard device name")
+	flag.StringVar(&Config.WgDeviceName, "wg-device", defaultWgDeviceName, "WireGuard device name (must be utunX on Mac=")
 	flag.StringVar(&Config.WgBoringtunPath, "wg-boringtun", "", "Path to boringtun")
 	flag.StringVar(&Config.ClientsSubnet, "client-subnet", "10.0.0.0/24", "Specify default client subnet")
 	flag.StringVar(&Config.Database, "database", "./var/wg.db", "Path to store clients.")
@@ -73,6 +79,10 @@ func InitFlags() {
 	if Config.WgEndpoint == "" {
 		log.Println("You must supply -wg-endpoint. For example vpn.example.com:51820 or 10.10.10:51820")
 		os.Exit(1)
+	}
+
+	if runtime.GOOS == "darwin" && strings.HasPrefix(Config.WgDeviceName, "utun") == false {
+		log.Fatalf("WG: Device name must be utun[0-9]*: %s", Config.WgDeviceName)
 	}
 
 	signingKey := make([]byte, 12)
@@ -92,7 +102,7 @@ func printConfiguration() {
 		fmt.Print("\n")
 		fmt.Print("#################################################\n")
 		fmt.Printf("#                                               #\n")
-		fmt.Printf("#                !!! WARNIGN !!!                #\n")
+		fmt.Printf("#                !!! WARNING !!!                #\n")
 		fmt.Printf("#                                               #\n")
 		fmt.Printf("# Will generate missing wireguard private key!  #\n")
 		fmt.Printf("# (This will break all existing clients!)       #\n")

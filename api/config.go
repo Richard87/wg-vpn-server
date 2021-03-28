@@ -38,7 +38,7 @@ func inc(ip net.IP) {
 }
 
 func findAvailableIps() []string {
-	ip, ipnet, err := net.ParseCIDR("10.0.0.0/24")
+	ip, ipnet, err := net.ParseCIDR(config.Config.ClientsSubnet)
 	if err != nil {
 		return []string{}
 	}
