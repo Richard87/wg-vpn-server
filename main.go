@@ -33,11 +33,10 @@ func main() {
 	initWireguard()
 	api.Run(embededFiles)
 
-	termSignal := make(chan os.Signal, 1)
+	termSignal := make(chan os.Signal)
 	signal.Notify(termSignal, syscall.SIGTERM)
 	signal.Notify(termSignal, os.Interrupt)
 	<-termSignal // Block until we receive our signal.
-	log.Println("Shutting down")
 	os.Exit(0)
 }
 
@@ -100,7 +99,7 @@ func initWireguard() {
 
 	wgDevice, err = client.Device(config.Config.WgDeviceName)
 	if err != nil {
-		log.Fatalf("Could not connect to WireGuard Controller: %v", err)
+		log.Fatalf("WG: Could not connect to Controller: %v", err)
 	}
 
 	cfg := wgtypes.Config{
@@ -120,13 +119,13 @@ func initWireguard() {
 	}
 	err = client.ConfigureDevice(config.Config.WgDeviceName, cfg)
 	if err != nil {
-		log.Printf("Could not configure device %s: %s", config.Config.WgDeviceName, err)
+		log.Printf("WG: Could not configure device %s: %s", config.Config.WgDeviceName, err)
 	}
 
 	for _, client := range allClients {
 		key, err := wgtypes.ParseKey(client.PublicKey)
 		if err != nil {
-			log.Printf("Could not add missing WireGuard Client %s: %s", client.Name, err)
+			log.Printf("WG: Could not add missing client %s: %s", client.Name, err)
 			continue
 		}
 
@@ -143,10 +142,11 @@ func initWireguard() {
 
 	err = client.ConfigureDevice(config.Config.WgDeviceName, cfg)
 	if err != nil {
-		log.Printf("Could not configure device %s: %s", config.Config.WgDeviceName, err)
+		log.Printf("WG: Could not configure device %s: %s", config.Config.WgDeviceName, err)
 	}
 
 	config.Config.WgClient = client
+	log.Println("WG: Started")
 }
 
 func runEmbeddedWireguard(ready chan bool) {
@@ -156,24 +156,21 @@ func runEmbeddedWireguard(ready chan bool) {
 	tunDevice, err := tun.CreateTUN(config.Config.WgDeviceName, config.MTU)
 
 	if err != nil {
-		log.Fatalf("WireGuard: Could not create interface %s: %s", config.Config.WgDeviceName, err)
+		log.Fatalf("WG: Could not create interface %s: %s", config.Config.WgDeviceName, err)
 	}
-	logger := device.NewLogger(
-		3,
-		fmt.Sprintf("(%s) ", config.Config.WgDeviceName),
-	)
+	logger := device.NewLogger(1, fmt.Sprintf("WG: (%s) ", config.Config.WgDeviceName))
 	wgInternalDevice := device.NewDevice(tunDevice, logger)
 
 	errs := make(chan error)
 
 	fileUapi, err := ipc.UAPIOpen(config.Config.WgDeviceName)
 	if err != nil {
-		log.Printf("Failed to openuapi socket: %v", err)
+		log.Printf("WG: Failed to openuapi socket: %v", err)
 		os.Exit(1)
 	}
 	uapi, err := ipc.UAPIListen(config.Config.WgDeviceName, fileUapi)
 	if err != nil {
-		log.Printf("Failed to listen on uapi socket: %v", err)
+		log.Printf("WG: Failed to listen on uapi socket: %v", err)
 		os.Exit(1)
 	}
 
@@ -200,4 +197,5 @@ func runEmbeddedWireguard(ready chan bool) {
 	// clean up
 	_ = uapi.Close()
 	wgInternalDevice.Close()
+	log.Println("WG: Shut down")
 }

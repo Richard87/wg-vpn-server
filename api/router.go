@@ -21,7 +21,9 @@ var Router *fiber.App
 
 func Run(embeddedFiles embed.FS) {
 
-	Router = fiber.New()
+	Router = fiber.New(fiber.Config{
+		DisableStartupMessage: true,
+	})
 	Router.Use(logger.New())
 	Router.Use(compress.New(compress.Config{
 		Level: compress.LevelBestSpeed,
@@ -37,33 +39,35 @@ func Run(embeddedFiles embed.FS) {
 		log.Fatalf("Could not load UI: %s", err)
 	}
 	Router.Post("/authenticate", Authenticate)
+
+	authRoutes := Router.Group("/api", NewAuthenticationMiddleware())
+	authRoutes.Get("/clients", GetClients)
+	authRoutes.Post("/clients", CreateClient)
+	authRoutes.Get("/clients/:id", GetClient)
+	authRoutes.Delete("/clients/:id", DeleteClient)
+	authRoutes.Get("/config", GetConfig)
+
 	Router.Use("/", filesystem.New(filesystem.Config{
 		Root: http.FS(assets),
 	}))
-
-	authRoutes := Router.Group("/api", NewAuthenticationMiddleware())
-	authRoutes.Get("/api/clients", GetClients)
-	authRoutes.Post("/api/clients", CreateClient)
-	authRoutes.Get("/api/clients/:id", GetClient)
-	authRoutes.Delete("/api/clients/:id", DeleteClient)
-	authRoutes.Get("/api/config", GetConfig)
 
 	go func() {
 		err := Router.Listen("0.0.0.0:" + config.Config.HttpsPort)
 		if err != nil {
 			log.Fatalf("API: Could not start: %s", err)
 		}
-		log.Println("API: shut down")
 	}()
 
-	termSignal := make(chan os.Signal, 1)
-	signal.Notify(termSignal, syscall.SIGTERM)
-	signal.Notify(termSignal, os.Interrupt)
-	<-termSignal // Block until we receive our signal.
-	log.Println("API: shutting down...")
+	go func() {
+		termSignal := make(chan os.Signal, 1)
+		signal.Notify(termSignal, syscall.SIGTERM)
+		signal.Notify(termSignal, os.Interrupt)
+		<-termSignal // Block until we receive our signal.
+		log.Println("API: shutting down...")
 
-	err = Router.Shutdown()
-	if err != nil {
-		log.Fatalf("API: Coult not shut down: %s", err)
-	}
+		err = Router.Shutdown()
+		if err != nil {
+			log.Fatalf("API: Coult not shut down: %s", err)
+		}
+	}()
 }

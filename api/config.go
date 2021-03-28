@@ -82,8 +82,8 @@ func GetConfig(c *fiber.Ctx) error {
 	if len(ips) > 0 {
 		nextAvailableIp4 = ips[0]
 	}
-	c.Status(http.StatusOK)
-	return c.JSON(Config{
+
+	return c.Status(http.StatusOK).JSON(Config{
 		Endpoint:         config.Config.WgEndpoint + ":" + strconv.Itoa(config.Config.WgListenPort),
 		NextAvailableIp4: nextAvailableIp4,
 		PublicKey:        config.Config.WgPublicKey.String(),

@@ -63,7 +63,7 @@ func Authenticate(c *fiber.Ctx) error {
 		SameSite: "lax",
 	})
 
-	return c.JSON(LoginResponse{Token: tokenString})
+	return c.JSON(LoginResponse{Token: parts[0] + "." + parts[1]})
 }
 
 func NewAuthenticationMiddleware() fiber.Handler {
@@ -71,13 +71,16 @@ func NewAuthenticationMiddleware() fiber.Handler {
 		authorization := c.Get("Authorization")
 		signature := c.Cookies("auth")
 		authPars := strings.Split(authorization, " ")
-		jwtParts := strings.Split(authPars[1], ".")
-		if signature == "" || len(jwtParts) != 2 {
-			c.Status(http.StatusUnauthorized)
-			return nil
+		if len(authPars) != 2 {
+			return c.Status(http.StatusUnauthorized).Format("Unauthorized")
 		}
 
-		tokenString := fmt.Sprintf("%s.%s", jwtParts[1], signature)
+		jwtParts := strings.Split(authPars[1], ".")
+		if signature == "" || len(jwtParts) != 2 {
+			return c.Status(http.StatusUnauthorized).Format("Unauthorized")
+		}
+
+		tokenString := fmt.Sprintf("%s.%s.%s", jwtParts[0], jwtParts[1], signature)
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 			if token.Header["alg"] != "HS256" {
 				return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
@@ -85,8 +88,7 @@ func NewAuthenticationMiddleware() fiber.Handler {
 			return config.Config.HttpsJwtSigningKey, nil
 		})
 		if err != nil || !token.Valid {
-			c.Status(http.StatusForbidden)
-			return nil
+			return c.Status(http.StatusForbidden).Format("Forbidden")
 		}
 
 		c.Locals("jwt", token)

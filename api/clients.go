@@ -16,10 +16,10 @@ type ClientResponse struct {
 
 func GetClients(c *fiber.Ctx) error {
 
-	clients := []database.Client{}
+	clients := make([]database.Client, 100)
 	database.Connection.Find(&clients)
 
-	var response []ClientResponse
+	response := make([]ClientResponse, 100)
 	for _, c := range clients {
 		res := ClientResponse{
 			Client:          c,
@@ -31,23 +31,20 @@ func GetClients(c *fiber.Ctx) error {
 		response = append(response, res)
 	}
 
-	c.Status(http.StatusOK)
-	return c.JSON(response)
+	return c.Status(http.StatusOK).JSON(response)
 }
 
 func CreateClient(c *fiber.Ctx) error {
 	var newClient = database.Client{}
 	if err := c.BodyParser(newClient); err != nil {
-		c.Status(http.StatusBadRequest)
-		return nil
+		return c.Status(http.StatusBadRequest).Format("Bad request")
 	}
 
 	//TODO: Validate IP
 
 	database.Connection.Create(newClient)
-	c.Status(http.StatusOK)
 
-	return c.JSON(&ClientResponse{
+	return c.Status(http.StatusOK).JSON(&ClientResponse{
 		Client:          newClient,
 		LatestHandshake: "2021-01-09T21:15:37.189Z",
 		Endpoint:        "77.18.62.145:15427",
@@ -59,44 +56,38 @@ func CreateClient(c *fiber.Ctx) error {
 func GetClient(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {
-		c.Status(http.StatusBadRequest)
-		return nil
+		return c.Status(http.StatusBadRequest).Format("Bad request")
 	}
 
-	var client = database.Client{}
-	database.Connection.Find(&client, id)
+	client := new(database.Client)
+	database.Connection.Find(client, id)
 	if client.PublicKey == "" {
-		c.Status(http.StatusNotFound)
-		return nil
+		return c.Status(http.StatusNotFound).Format("Not found")
 	}
 
 	var response = ClientResponse{
-		Client:          client,
+		Client:          *client,
 		LatestHandshake: "2021-01-09T21:15:37.189Z",
 		Endpoint:        "77.18.62.145:15427",
 		SentBytes:       32165498,
 		ReceivedBytes:   132546,
 	}
 
-	c.Status(http.StatusOK)
-	return c.JSON(response)
+	return c.Status(http.StatusOK).JSON(response)
 }
 
 func DeleteClient(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if id == "" {
-		c.Status(http.StatusBadRequest)
-		return nil
+		return c.Status(http.StatusBadRequest).Format("Bad request")
 	}
 
 	client := database.Client{}
 	database.Connection.Find(&client, id)
 	if client.PublicKey == "" {
-		c.Status(http.StatusNotFound)
-		return nil
+		return c.Status(http.StatusNotFound).Format("Not found")
 	}
 
 	database.Connection.Delete(&client)
-	c.Status(http.StatusNoContent)
-	return nil
+	return c.Status(http.StatusNoContent).JSON(nil)
 }
